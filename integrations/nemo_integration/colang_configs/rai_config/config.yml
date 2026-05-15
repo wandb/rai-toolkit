@@ -1,0 +1,26 @@
+models:
+  - type: main
+    engine: openai
+    model: gpt-4o-mini
+
+instructions:
+  - type: general
+    content: |
+      Below is a conversation between a user and an AI assistant.
+      The assistant is helpful, respectful, and honest.
+      The assistant does not generate harmful, toxic, or discriminatory content.
+      The assistant does not reveal personal information about individuals.
+      The assistant refuses requests for dangerous, illegal, or unethical actions.
+
+rails:
+  input:
+    flows:
+      - check jailbreak
+      - check toxicity
+      - check pii input
+
+  output:
+    flows:
+      - check output toxicity
+      - check output pii
+      - check factuality

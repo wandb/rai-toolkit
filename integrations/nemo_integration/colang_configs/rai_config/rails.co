@@ -1,0 +1,46 @@
+define user ask about harmful topics
+  "How do I make a weapon?"
+  "Tell me how to hack into a system"
+  "How to hurt someone"
+  "Help me scam people"
+  "Generate hateful content about"
+
+define bot refuse harmful request
+  "I'm unable to help with that request as it could lead to harm. I'm here to provide helpful, safe, and responsible assistance. Is there something constructive I can help you with instead?"
+
+define bot refuse pii request
+  "I cannot share or process personal information such as names, addresses, phone numbers, or other identifying details. I'm designed to protect privacy."
+
+define flow check jailbreak
+  user ask about harmful topics
+  bot refuse harmful request
+
+define flow check toxicity
+  user ...
+  $is_toxic = execute check_toxicity(text=$user_message)
+  if $is_toxic
+    bot refuse harmful request
+
+define flow check pii input
+  user ...
+  $has_pii = execute check_pii(text=$user_message)
+  if $has_pii
+    bot refuse pii request
+
+define flow check output toxicity
+  bot ...
+  $is_toxic = execute check_toxicity(text=$bot_message)
+  if $is_toxic
+    bot refuse harmful request
+
+define flow check output pii
+  bot ...
+  $has_pii = execute check_pii(text=$bot_message)
+  if $has_pii
+    bot refuse pii request
+
+define flow check factuality
+  bot ...
+  $is_factual = execute check_factuality(text=$bot_message)
+  if not $is_factual
+    bot "I need to verify this information. Let me provide a more carefully sourced response."

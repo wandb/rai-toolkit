@@ -1,0 +1,43 @@
+# Publish allowlist. The first public Git push should contain only the
+# package source and release metadata.
+*
+
+!/.gitignore
+!/README.md
+!/NOTICE
+!/LICENSE
+!/pyproject.toml
+
+# Toolkit source packages included by pyproject.toml.
+!/rai_toolkit/
+!/rai_toolkit/**
+!/integrations/
+!/integrations/**
+
+# Never publish generated/local files inside otherwise-allowed package dirs.
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+*.egg-info/
+build/
+dist/
+
+# Local secrets and machine state.
+.env
+.env.*
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+.cache/
+.streamlit/secrets.toml

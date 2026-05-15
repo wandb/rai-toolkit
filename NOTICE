@@ -1,0 +1,112 @@
+Responsible AI Toolkit
+Copyright 2024-2026 Karan Nisar
+
+This product is licensed under the Apache License, Version 2.0 (see
+LICENSE). It also integrates with, or reserves explicit integration
+boundaries for, the third-party software listed below. None of these
+dependencies are bundled in the core package.
+
+================================================================================
+PyRIT — Python Risk Identification Tool for generative AI
+================================================================================
+
+  Project:  https://github.com/microsoft/PyRIT
+  License:  MIT
+  Pip extra: `pip install rai-toolkit[pyrit]`
+  Used by:  integrations/pyrit_integration/adapter.py — subclasses
+            `pyrit.prompt_target.PromptTarget`, consumes
+            `pyrit.models.AttackOutcome` / `Message`, and initializes
+            `pyrit.memory.CentralMemory`. The adapter translates PyRIT
+            attack runs into the toolkit's RedTeamReport shape. The
+            default `rai assess` path does not invoke this adapter; it
+            is reachable when callers opt into the PyRIT source through
+            the assessment API or import it explicitly.
+
+If you publish work that relies on this adapter, the PyRIT authors ask
+that you cite their paper:
+
+  @misc{munoz2024pyritframeworksecurityrisk,
+        title={PyRIT: A Framework for Security Risk Identification
+               and Red Teaming in Generative AI Systems},
+        author={Gary D. Lopez Munoz and Amanda J. Minnich and
+                Roman Lutz and Richard Lundeen and Raja Sekhar
+                Rao Dheekonda and Nina Chikanov and
+                Bolor-Erdene Jagdagdorj and Martin Pouliot and
+                Shiven Chawla and Whitney Maxwell and Blake
+                Bullwinkel and Katherine Pratt and Joris de
+                Gruyter and Charlotte Siska and Pete Bryan and
+                Tori Westerhoff and Chang Kawaguchi and
+                Christian Seifert and Ram Shankar Siva Kumar and
+                Yonatan Zunger},
+        year={2024},
+        eprint={2410.02828},
+        archivePrefix={arXiv},
+        primaryClass={cs.CR},
+        url={https://arxiv.org/abs/2410.02828},
+  }
+
+The tool itself is also citable via the upstream CITATION.cff entry
+(https://github.com/microsoft/PyRIT/blob/main/CITATION.cff):
+
+  Microsoft AI Red Team. PyRIT: The Python Risk Identification Tool
+  for generative AI. https://github.com/microsoft/PyRIT,
+  doi:10.48550/arXiv.2410.02828, 2024.
+
+================================================================================
+Garak — Generative AI Red-teaming & Assessment Kit
+================================================================================
+
+  Project:  https://github.com/NVIDIA/garak
+  License:  Apache-2.0
+  Pip extra: `pip install rai-toolkit[garak]`
+  Used by:  integrations/garak_integration/adapter.py — wraps selected
+            Garak probes with a toolkit BaseModel-backed generator and
+            translates probe results into the toolkit's RedTeamReport shape.
+            The default `rai assess` path does not invoke this adapter; it
+            is reachable when callers opt into the Garak source through
+            the assessment API or import it explicitly.
+
+If you publish work that relies on this adapter, cite the Garak paper
+requested by the upstream project:
+
+  @article{garak,
+    title={{garak: A Framework for Security Probing Large Language Models}},
+    author={Leon Derczynski and Erick Galinkin and Jeffrey Martin and
+            Subho Majumdar and Nanna Inie},
+    year={2024},
+    howpublished={\url{https://garak.ai}}
+  }
+
+
+================================================================================
+HealthBench — Evaluation dataset for medical conversations
+================================================================================
+
+  Project:  https://huggingface.co/datasets/openai/healthbench
+  Paper:    https://arxiv.org/abs/2505.08775
+  License:  MIT
+  Used by:  rai_toolkit/examples/registry.py — the
+            `_healthbench_triage_loader` streams the upstream dataset
+            from HuggingFace at runtime (no copy is bundled). Reachable
+            via the `healthbench-triage` slug; loads the
+            `theme:emergency_referrals` subset and uses
+            `ideal_completions_data.ideal_completion` as the gold
+            answer. Per-row rubrics are preserved for the toolkit's
+            HealthBench-style RubricScorer.
+
+If you publish work that uses HealthBench, the upstream authors ask that
+you cite:
+
+  @article{arora2025healthbench,
+    title={HealthBench: Evaluating Large Language Models Towards
+           Improved Human Health},
+    author={Arora, Rahul K. and Wei, Jason and
+            Soskin Hicks, Rebecca and Bowman, Preston and
+            Qui{\~n}onero-Candela, Joaquin and
+            Tsimpourlas, Foivos and Sharman, Michael and
+            Shah, Meghan and Vallone, Andrea and
+            Beutel, Alex and Heidecke, Johannes and
+            Singhal, Karan},
+    year={2025},
+    journal={arXiv preprint arXiv:2505.08775}
+  }

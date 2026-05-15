@@ -1,0 +1,112 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rai-toolkit"
+version = "0.1.0"
+description = "Production-grade Responsible AI toolkit with compliance mapping, evaluation, and guardrails"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
+authors = [
+    { name = "Karan Nisar" },
+]
+keywords = ["rai-toolkit", "responsible-ai", "llm", "evaluation", "guardrails", "compliance", "ai-safety"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    # openai>=2.2.0 is required by the `pyrit` and `garak` extras (both depend
+    # on openai>=2.0). Keeping the core floor aligned avoids a silent broken
+    # install where pyrit imports fail with `cannot import name 'VideoSeconds'`.
+    "openai>=2.2.0",
+    # pydantic>=2.6 aligns with wandb>=0.27 which requires pydantic>=2.6.
+    "pydantic>=2.6.0",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.1",
+]
+
+[project.scripts]
+rai = "rai_toolkit.cli:main"
+
+[project.optional-dependencies]
+weave = [
+    "weave>=0.52.40",
+    "wandb>=0.27.0",
+    "gql>=4.0.0",
+]
+scorers = [
+    "weave>=0.52.40",
+    "wandb>=0.27.0",
+]
+nemo = [
+    # nemoguardrails 0.21 transitively pins pandas<3, which pip will honour
+    # automatically when resolving the [all] extra.
+    "nemoguardrails>=0.21.0",
+]
+pyrit = [
+    "pyrit>=0.13.0",
+]
+garak = [
+    "garak>=0.15.0",
+    # transformers v5 (a garak transitive dep) lazy-references torchvision in
+    # its `*_image_processing_fast` modules. Without this, Streamlit's source
+    # watcher spams ModuleNotFoundError tracebacks on app start. None of our
+    # runtime paths use torchvision; it's purely there to satisfy the lazy
+    # attribute walk.
+    "torchvision>=0.20.0",
+]
+demo = [
+    "streamlit>=1.57.0",
+    "plotly>=6.0.0",
+    "pandas>=2.1.0",
+]
+datasets = [
+    # Upper bound matches the cap from garak 0.15 (datasets<4.0) so the [all]
+    # extra still resolves. Bump in lockstep when garak relaxes its pin.
+    "datasets>=3.0.0,<4.0",
+]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+]
+all = [
+    "rai-toolkit[weave,scorers,nemo,demo,dev,datasets,pyrit,garak]",
+]
+
+[project.urls]
+Homepage = "https://github.com/knisar/rai-toolkit"
+Repository = "https://github.com/knisar/rai-toolkit"
+Changelog = "https://github.com/knisar/rai-toolkit/blob/main/CHANGELOG.md"
+Issues = "https://github.com/knisar/rai-toolkit/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["rai_toolkit", "integrations"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/README.md",
+    "/NOTICE",
+    "/LICENSE",
+    "/pyproject.toml",
+    "/rai_toolkit",
+    "/integrations",
+]
+exclude = [
+    "**/.DS_Store",
+    "**/__pycache__",
+    "**/*.py[cod]",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
