@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Submission lifecycle + automated decision engine.
 
 A ``Submission`` wraps a ``AssessmentResult`` with state (submitted →

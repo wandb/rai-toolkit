@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Risk-aware test scoping.
 
 Given an ``ApplicationProfile``, return a configured ``Assessor`` plus a

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Attack catalog — curated adversarial prompt templates.
 
 Each attack has:

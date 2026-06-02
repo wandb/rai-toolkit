@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Base scorer interface — the core abstraction users implement for custom scorers."""
 
 from __future__ import annotations

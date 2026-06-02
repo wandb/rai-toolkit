@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """LLM-as-a-Judge scorers — use any OpenAI-compatible API for evaluation.
 
 These scorers call an LLM to evaluate model outputs on specific RAI dimensions.

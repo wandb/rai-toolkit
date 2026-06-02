@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Optional PyRIT integration for the Responsible AI toolkit.
 
 Public import path for PyPI users:

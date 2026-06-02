@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Evaluation pipeline — compliance-aware evaluation orchestration."""
 
 from rai_toolkit.evaluation.pipeline import RAIEvaluationPipeline, EvaluationResults

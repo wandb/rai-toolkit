@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """EU AI Act compliance mapping.
 
 Maps EU AI Act requirements to RAI toolkit capabilities and MIT risk categories.

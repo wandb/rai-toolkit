@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Score normalization — converts various scoring scales to a unified 0-1 range."""
 
 from __future__ import annotations

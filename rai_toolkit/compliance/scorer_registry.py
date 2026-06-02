@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Scorer registry — maps risk categories to scorer classes.
 
 This is the central mapping table. When the compliance engine resolves a profile,

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Weave annotations for the human-in-the-loop layer.
 
 When a reviewer pins a chat turn as a ``ManualFinding`` or signs off on a

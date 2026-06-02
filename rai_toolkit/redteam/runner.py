@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Attack orchestrator — runs a catalog of attacks against a model and reports."""
 
 from __future__ import annotations

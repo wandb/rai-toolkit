@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Responsible AI Toolkit — Production-grade RAI evaluation, compliance, and guardrails."""
 
 try:

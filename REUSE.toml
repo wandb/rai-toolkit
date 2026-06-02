@@ -1,0 +1,19 @@
+version = 1
+
+# Files that cannot carry an inline SPDX header (JSON has no comment syntax)
+# or where a header would be inappropriate (top-level docs and metadata) are
+# licensed here instead, per the REUSE specification.
+
+[[annotations]]
+path = [
+    "README.md",
+    "NOTICE",
+    ".gitignore",
+]
+SPDX-FileCopyrightText = "2026 CoreWeave, Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "rai_toolkit/examples/**.json"
+SPDX-FileCopyrightText = "2026 CoreWeave, Inc."
+SPDX-License-Identifier = "Apache-2.0"

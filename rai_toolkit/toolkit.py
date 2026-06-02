@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """RAIToolkit — top-level orchestrator for the Responsible AI toolkit.
 
 Provides a unified interface for compliance mapping, evaluation, and guardrails.

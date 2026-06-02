@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Compliance Mapping Engine — the central orchestrator.
 
 Maps compliance frameworks to risk categories to scorers.

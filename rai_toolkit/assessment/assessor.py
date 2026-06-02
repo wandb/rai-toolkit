@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Single-call assessment orchestrator.
 
 Takes a model + compliance preset and runs the full pipeline:

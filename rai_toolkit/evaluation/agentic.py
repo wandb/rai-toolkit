@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Contracts for multi-turn and agentic evaluation (scaffolding).
 
 The core :class:`rai_toolkit.models.base.BaseModel` API is single-turn

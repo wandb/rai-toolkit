@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Garak red-team integration.
 
 The toolkit's first-party red-team API stays under ``rai_toolkit.redteam``;

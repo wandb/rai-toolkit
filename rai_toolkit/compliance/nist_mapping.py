@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """NIST AI Risk Management Framework mapping.
 
 Maps NIST AI RMF 1.0 functions and categories to RAI toolkit capabilities

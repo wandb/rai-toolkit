@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Continuous compliance / drift monitoring — planning helpers.
 
 One-shot :class:`rai_toolkit.assessment.Assessor` runs produce a point-in-time

@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 name: "EU AI Act - Article 15 (Accuracy, Robustness, Cybersecurity)"
 description: >
   Policies enforcing Article 15 of the EU AI Act for high-risk AI systems.

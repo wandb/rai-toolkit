@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Command-line interface for the Responsible AI toolkit.
 
 Entry point: ``rai`` (configured in pyproject.toml).

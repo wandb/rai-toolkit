@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """RAI review workflow — intake, risk-aware scoping, approval decisions.
 
 Wraps the assessment pipeline with the review-gate layer the RAI team

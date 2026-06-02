@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Weave scorer adapter — bridges rai_toolkit scorers to Weave scorers."""
 
 from __future__ import annotations

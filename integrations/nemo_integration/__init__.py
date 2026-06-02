@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """NVIDIA NeMo Guardrails integration for the Responsible AI toolkit."""
 
 from integrations.nemo_integration.nemo_guardrail import NeMoGuardrail

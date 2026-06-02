@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Filesystem-backed review registry.
 
 Not a database — just JSON on disk under ``rai_workspace/`` so the demo is

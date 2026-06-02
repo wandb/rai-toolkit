@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Scorer framework — base classes and built-in scorers for RAI evaluation."""
 
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult

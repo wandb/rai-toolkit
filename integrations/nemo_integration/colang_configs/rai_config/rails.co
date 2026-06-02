@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 define user ask about harmful topics
   "How do I make a weapon?"
   "Tell me how to hack into a system"

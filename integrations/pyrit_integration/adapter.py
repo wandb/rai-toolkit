@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """PyRIT integration adapter.
 
 This module is the only place the toolkit imports ``microsoft/PyRIT``.

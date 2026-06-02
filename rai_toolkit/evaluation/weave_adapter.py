@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Convert Weave ``get_eval_results`` output into ``EvaluationResults`` for assessment.
 
 Lives under ``rai_toolkit.evaluation`` so importing it does not pull in

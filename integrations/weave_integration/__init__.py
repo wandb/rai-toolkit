@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """W&B Weave integration — connects the rai_toolkit toolkit to Weave.
 
 Provides adapters for: tracing, models, scorers, and evaluations. LLM

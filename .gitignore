@@ -6,6 +6,9 @@
 !/README.md
 !/NOTICE
 !/LICENSE
+!/LICENSES/
+!/LICENSES/**
+!/REUSE.toml
 !/pyproject.toml
 
 # Toolkit source packages included by pyproject.toml.

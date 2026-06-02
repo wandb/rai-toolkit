@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Data models for compliance frameworks, risk categories, and profiles."""
 
 from __future__ import annotations

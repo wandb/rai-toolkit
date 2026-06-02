@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """ApplicationProfile — the intake record for an app requesting RAI review.
 
 This is the *input* the RAI team receives from an app team. Everything that

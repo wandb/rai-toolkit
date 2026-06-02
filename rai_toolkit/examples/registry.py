@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Catalog of public RAI benchmark examples with lazy loaders.
 
 Each example is registered with:

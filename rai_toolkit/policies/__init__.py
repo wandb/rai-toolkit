@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Policy-as-code engine.
 
 Lets customers encode compliance rules as versioned, reviewable YAML files.

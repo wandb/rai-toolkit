@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Dataset-authored policy expectation resolver.
 
 This module implements the policy-ready dataset contract:

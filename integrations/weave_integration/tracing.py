@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Weave tracing integration — @weave.op wrapping and initialization."""
 
 from __future__ import annotations

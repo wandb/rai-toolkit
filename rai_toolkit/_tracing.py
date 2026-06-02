@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Optional Weave tracing shim.
 
 The core toolkit stays platform-agnostic: nothing in `rai_toolkit/` imports

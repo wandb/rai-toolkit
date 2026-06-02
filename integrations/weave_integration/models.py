@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Weave model adapter — wraps rai_toolkit BaseModel as weave.Model."""
 
 from __future__ import annotations

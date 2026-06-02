@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """NeMo Guardrails wrapped as a rai_toolkit scorer for evaluations."""
 
 from __future__ import annotations

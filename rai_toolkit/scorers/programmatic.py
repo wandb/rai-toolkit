@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 """Programmatic scorers — rule-based evaluation that needs no LLM.
 
 These scorers use regex, keyword matching, and structural checks.
