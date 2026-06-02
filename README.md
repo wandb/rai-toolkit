@@ -7,7 +7,9 @@
 > findings back to the evidence that produced them.
 
 ```bash
-pip install rai-toolkit
+git clone https://github.com/knisar/rai-toolkit.git
+cd rai-toolkit
+pip install -e ".[all]"
 ```
 
 ```bash
@@ -243,40 +245,60 @@ through adapters.
 `rai_toolkit/` contains the vendor-neutral core. Third-party bridges live in
 `integrations/` and are enabled only by explicit extras or direct imports:
 - `integrations.pyrit_integration` — optional PyRIT adapter
-  (`pip install "rai-toolkit[pyrit]"`).
+  (`pip install -e ".[pyrit]"` from a clone of this repo).
 - `integrations.garak_integration` — optional Garak adapter
-  (`pip install "rai-toolkit[garak]"`).
+  (`pip install -e ".[garak]"` from a clone of this repo).
 
 ---
 
 ## Install
 
+This project is **not published to PyPI**. Install it directly from the
+source tree (clone + editable install) or straight from GitHub.
+
+### Editable install from a clone (recommended for contributors)
+
 ```bash
-# Core library
-pip install rai-toolkit
+git clone https://github.com/knisar/rai-toolkit.git
+cd rai-toolkit
+
+# Core library only
+pip install -e .
 
 # Weave tracing (recommended — lightweight, no ML deps)
-pip install "rai-toolkit[weave]"
+pip install -e ".[weave]"
 
 # Weave tracing + LLM-judge scorers
-pip install "rai-toolkit[scorers]"
+pip install -e ".[scorers]"
 
 # Public dataset loaders
-pip install "rai-toolkit[datasets]"
+pip install -e ".[datasets]"
 
 # PyRIT red-team integration
-pip install "rai-toolkit[pyrit]"
+pip install -e ".[pyrit]"
 
 # Garak red-team integration
-pip install "rai-toolkit[garak]"
+pip install -e ".[garak]"
 
-# Everything (dev)
-pip install "rai-toolkit[all]"
+# Everything (incl. demo Streamlit app + dev tooling)
+pip install -e ".[all]"
 ```
 
-The Python import path stays `rai_toolkit` (distribution name and import name
-are intentionally different — `pip install rai-toolkit` then
-`from rai_toolkit import Assessor`).
+### Direct install from GitHub (for downstream users)
+
+```bash
+pip install "git+https://github.com/knisar/rai-toolkit.git"
+
+# With extras
+pip install "rai-toolkit[weave,scorers] @ git+https://github.com/knisar/rai-toolkit.git"
+pip install "rai-toolkit[all] @ git+https://github.com/knisar/rai-toolkit.git"
+```
+
+You can pin to a specific commit, tag, or branch by appending `@<ref>` to the
+git URL (e.g. `git+https://github.com/knisar/rai-toolkit.git@v0.1.0`).
+
+The Python import path is `rai_toolkit` (e.g. `from rai_toolkit import Assessor`)
+regardless of which install method you use.
 
 ## Quickstart
 
@@ -458,14 +480,14 @@ Apache 2.0. See [`LICENSE`](LICENSE).
 Optional integrations are listed in [`NOTICE`](NOTICE) along with their
 licenses and citation requirements. Notably:
 
-- **PyRIT** (`pip install rai-toolkit[pyrit]`) — the
-  `integrations/pyrit_integration/adapter.py` module subclasses and runs
+- **PyRIT** (enabled via the `[pyrit]` extra — see [Install](#install)) —
+  the `integrations/pyrit_integration/adapter.py` module subclasses and runs
   [microsoft/PyRIT](https://github.com/microsoft/PyRIT) (MIT). If you
   publish work that uses this adapter, please cite the PyRIT paper
   ([Lopez Munoz et al., 2024, arXiv:2410.02828](https://arxiv.org/abs/2410.02828));
   the BibTeX block is in [`NOTICE`](NOTICE).
-- **Garak** (`pip install rai-toolkit[garak]`) — the
-  `integrations/garak_integration/adapter.py` module bridges selected
+- **Garak** (enabled via the `[garak]` extra — see [Install](#install)) —
+  the `integrations/garak_integration/adapter.py` module bridges selected
   NVIDIA/garak probes into the toolkit's `RedTeamReport` shape. If you
   publish work that uses this adapter, cite the Garak paper listed in
   [`NOTICE`](NOTICE).
