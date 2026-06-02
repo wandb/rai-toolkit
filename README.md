@@ -7,7 +7,7 @@
 > findings back to the evidence that produced them.
 
 ```bash
-git clone https://github.com/knisar/rai-toolkit.git
+git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
 pip install -e ".[all]"
 ```
@@ -259,7 +259,7 @@ source tree (clone + editable install) or straight from GitHub.
 ### Editable install from a clone (recommended for contributors)
 
 ```bash
-git clone https://github.com/knisar/rai-toolkit.git
+git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
 
 # Core library only
@@ -287,15 +287,15 @@ pip install -e ".[all]"
 ### Direct install from GitHub (for downstream users)
 
 ```bash
-pip install "git+https://github.com/knisar/rai-toolkit.git"
+pip install "git+https://github.com/wandb/rai-toolkit.git"
 
 # With extras
-pip install "rai-toolkit[weave,scorers] @ git+https://github.com/knisar/rai-toolkit.git"
-pip install "rai-toolkit[all] @ git+https://github.com/knisar/rai-toolkit.git"
+pip install "rai-toolkit[weave,scorers] @ git+https://github.com/wandb/rai-toolkit.git"
+pip install "rai-toolkit[all] @ git+https://github.com/wandb/rai-toolkit.git"
 ```
 
 You can pin to a specific commit, tag, or branch by appending `@<ref>` to the
-git URL (e.g. `git+https://github.com/knisar/rai-toolkit.git@v0.1.0`).
+git URL (e.g. `git+https://github.com/wandb/rai-toolkit.git@v0.1.0`).
 
 The Python import path is `rai_toolkit` (e.g. `from rai_toolkit import Assessor`)
 regardless of which install method you use.
