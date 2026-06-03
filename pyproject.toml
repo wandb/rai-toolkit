@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
 
 [build-system]
 requires = ["hatchling"]
@@ -88,10 +88,9 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/knisar/rai-toolkit"
-Repository = "https://github.com/knisar/rai-toolkit"
-Changelog = "https://github.com/knisar/rai-toolkit/blob/main/CHANGELOG.md"
-Issues = "https://github.com/knisar/rai-toolkit/issues"
+Homepage = "https://github.com/wandb/rai-toolkit"
+Repository = "https://github.com/wandb/rai-toolkit"
+Issues = "https://github.com/wandb/rai-toolkit/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rai_toolkit", "integrations"]
@@ -101,9 +100,13 @@ include = [
     "/README.md",
     "/NOTICE",
     "/LICENSE",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
     "/pyproject.toml",
     "/rai_toolkit",
     "/integrations",
+    "/demo",
+    "/demo_app",
 ]
 exclude = [
     "**/.DS_Store",

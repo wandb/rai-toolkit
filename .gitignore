@@ -9,13 +9,23 @@
 !/LICENSES/
 !/LICENSES/**
 !/REUSE.toml
+!/.reuse/
+!/.reuse/**
 !/pyproject.toml
+!/CONTRIBUTING.md
+!/CODE_OF_CONDUCT.md
 
 # Toolkit source packages included by pyproject.toml.
 !/rai_toolkit/
 !/rai_toolkit/**
 !/integrations/
 !/integrations/**
+
+# Reference reviewer UI and example apps (see README).
+!/demo/
+!/demo/**
+!/demo_app/
+!/demo_app/**
 
 # Never publish generated/local files inside otherwise-allowed package dirs.
 **/__pycache__/

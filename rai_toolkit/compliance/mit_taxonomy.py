@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
 
 """MIT AI Risk Repository taxonomy — 7 domains, 23 subdomains.
 

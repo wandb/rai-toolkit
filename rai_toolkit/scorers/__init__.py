@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
 
 """Scorer framework — base classes and built-in scorers for RAI evaluation."""
 

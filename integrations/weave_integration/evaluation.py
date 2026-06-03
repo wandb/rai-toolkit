@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
 
 """Weave evaluation runner — runs rai_toolkit evaluations via weave.Evaluation."""
 

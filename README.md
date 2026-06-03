@@ -454,10 +454,8 @@ integrations/
   garak_integration/     Optional Garak red-team adapter
 ```
 
-## Tested, typed, open
+## Typed, open
 
-- Unit-tested across scorers, policies, attacks, and the assessment
-  pipeline (`pytest tests/`)
 - Type hints on every public API
 - Apache 2.0 license
 - Semantic versioning

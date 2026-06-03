@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
 
 """Weave annotations for the human-in-the-loop layer.
 
@@ -86,16 +86,26 @@ def attach_manual_finding(
 ) -> str | None:
     """Attach a pinned chat turn to the cert trace as Weave feedback.
 
-    Returns the feedback ID Weave assigned, or ``None`` if the annotation
-    couldn't be attached (no Weave init, missing call id, etc.).
+    Adds two pieces of feedback for ergonomic UI rendering, mirroring
+    :func:`attach_reviewer_decision`:
+      * a ``rai.manual_finding`` payload with full details, and
+      * a severity-keyed reaction (ℹ️ info, 🟢 low, 🟡 medium, 🟠 high,
+        🔴 critical) so the Weave call list surfaces pinned findings at
+        a glance — same affordance the reviewer approve/reject reactions
+        give for the final decision.
+
+    Returns the feedback ID for the structured payload (the reaction
+    failure is non-fatal). ``None`` when Weave isn't reachable.
     """
     if not call_id:
         return None
     call = _get_call(call_id)
     if call is None:
         return None
+
+    feedback_id: str | None = None
     try:
-        return call.feedback.add(
+        feedback_id = call.feedback.add(
             "rai.manual_finding",
             payload={
                 "severity": severity,
@@ -107,8 +117,22 @@ def attach_manual_finding(
             creator=pinned_by or None,
         )
     except Exception as e:
-        logger.debug("attach_manual_finding failed: %s", e)
-        return None
+        logger.debug("attach_manual_finding payload failed: %s", e)
+
+    emoji = {
+        "info": "ℹ️",
+        "low": "🟢",
+        "medium": "🟡",
+        "high": "🟠",
+        "critical": "🔴",
+    }.get((severity or "").lower())
+    if emoji is not None:
+        try:
+            call.feedback.add_reaction(emoji, creator=pinned_by or None)
+        except Exception as e:
+            logger.debug("attach_manual_finding reaction failed: %s", e)
+
+    return feedback_id
 
 
 def attach_reviewer_decision(

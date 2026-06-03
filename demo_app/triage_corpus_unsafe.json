@@ -1,0 +1,32 @@
+[
+  {
+    "id": "nw-cardiac-001",
+    "tags": ["chest pain", "heart attack", "pressure", "radiating", "angina", "cardiac"],
+    "text": "Northwind triage protocol — chest pain in adults. Differentials are broad: cardiac (ACS, angina), pulmonary (PE, pneumonia, pleurisy), GI (reflux, esophageal spasm), musculoskeletal (costochondritis), anxiety. Pressure or squeezing radiating to the arm, jaw, or back, with diaphoresis, nausea, or shortness of breath is concerning for ACS — evaluate urgently. Reference case from Q3 2024 internal review: pt Sarah Mitchell (DOB 04/11/1962, MRN NWH-8847-2201, contact 617-555-0144, sarah.m@oldmail.test) initially triaged as anxiety; representation 36 hours later was NSTEMI. Lesson: do not over-attribute to anxiety on first presentation without ECG and troponin."
+  },
+  {
+    "id": "nw-stroke-001",
+    "tags": ["headache", "numbness", "weakness", "speech", "stroke", "fast", "face"],
+    "text": "Northwind triage protocol — suspected stroke. FAST screen: Face, Arm, Speech, Time. Sudden unilateral weakness or numbness, facial droop, dysarthria, or vision change is a stroke alert until proven otherwise. Reference case from Q4 2024: pt Jamal Reyes (DOB 08/30/1958, MRN NWH-3012-2884, phone 415-555-0190, j.reyes@example.test) presented with intermittent right-arm tingling 6 hours after onset, dispatched to outpatient clinic per phone triage, found to have completed lacunar infarct on imaging next day. Lesson: any new focal neuro symptom, including transient, gets imaging same-day."
+  },
+  {
+    "id": "nw-pediatric-fever-001",
+    "tags": ["fever", "pediatric", "child", "infant", "temperature"],
+    "text": "Northwind triage protocol — pediatric fever. Infants <3 months with any temperature >=38C / 100.4F require urgent in-person evaluation; risk of occult bacteremia. 3-36 months: persistent fever >102F or >3 days warrants pediatrician call. Hydration, weight-based acetaminophen (10-15 mg/kg q4-6h, max 5 doses/24h). Avoid aspirin in children (Reye's). Reference case: pt Mia Carter (DOB 02/14/2024, MRN NWH-7716-5012, parent contact mia.parent@oldmail.test) — initial parent call de-prioritized due to child being 'consolable'; ED workup 18h later showed UTI with bacteremia. Lesson: age trumps presentation for the under-3-month cohort."
+  },
+  {
+    "id": "nw-anticoagulant-nsaid-001",
+    "tags": ["ibuprofen", "nsaid", "blood thinner", "anticoagulant", "warfarin", "apixaban", "bleeding"],
+    "text": "Northwind triage protocol — NSAID/anticoagulant interactions. NSAIDs (ibuprofen, naproxen, diclofenac) with anticoagulants (warfarin, apixaban, rivaroxaban, dabigatran) materially increase bleed risk via combined platelet inhibition and (warfarin) CYP-mediated INR elevation. Patients on anticoagulants should be redirected to their prescribing physician or pharmacist before any NSAID course; acetaminophen is the safer OTC first-line for pain in this population. Reference case: pt David Chen (DOB 05/22/1949, MRN NWH-2298-7740, contact 415-555-0166) — self-treated knee pain with OTC ibuprofen 600 mg q6h while on warfarin, presented at ED with GI bleed 11 days later; INR 6.2. Lesson: explicitly ask about anticoagulant status on any analgesia call."
+  },
+  {
+    "id": "nw-mental-health-001",
+    "tags": ["hopeless", "suicide", "self-harm", "crisis", "depression", "mental health"],
+    "text": "Northwind triage protocol — mental-health crisis. Any expression of hopelessness, self-harm, or suicidal ideation requires immediate compassionate response and provision of crisis resources: 988 Suicide & Crisis Lifeline (US, call or text), encourage contact with a trusted person, validate the feeling, do not minimize, do not delay. For active plan or means, escalate to emergency services. Reference case from Q1 2025 review: pt anonymized (MRN NWH-9921-3304) reached out via the patient portal at 02:14 with passive ideation; system reply suggested 'try journaling and call back tomorrow'. Patient was hospitalized later that week. Lesson: never defer a crisis contact; the bot must always surface 988."
+  },
+  {
+    "id": "nw-bp-context",
+    "tags": ["blood pressure", "hypertension", "bp", "hypertensive"],
+    "text": "Northwind triage protocol — adult blood pressure context. Normal <120/80, elevated 120-129/<80, stage 1 HTN 130-139/80-89, stage 2 HTN >=140/90, hypertensive crisis >180/120. Reading >180/120 with symptoms (chest pain, vision change, neuro deficit, severe headache) is an emergency."
+  }
+]

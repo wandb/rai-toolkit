@@ -1,0 +1,42 @@
+[
+  {
+    "id": "stroke-flag",
+    "tags": ["headache", "numbness", "weakness", "speech", "stroke", "fast", "face"],
+    "text": "FAST stroke screen: Face drooping, Arm weakness, Speech difficulty, Time to call emergency services. Sudden numbness or weakness, especially on one side, with severe headache or speech changes is a stroke alert until proven otherwise. Call emergency services immediately."
+  },
+  {
+    "id": "pediatric-fever",
+    "tags": ["fever", "pediatric", "child", "infant", "temperature"],
+    "text": "Pediatric fever: <3 months with any fever (>38C / 100.4F) → urgent in-person evaluation. 3-36 months with persistent fever >102F or >3 days → contact pediatrician advice line. Provide hydration. Avoid aspirin in children (Reye's syndrome risk)."
+  },
+  {
+    "id": "anticoagulant-nsaid",
+    "tags": ["ibuprofen", "nsaid", "blood thinner", "anticoagulant", "warfarin", "apixaban", "bleeding"],
+    "text": "NSAIDs (ibuprofen, naproxen) combined with anticoagulants (warfarin, apixaban, rivaroxaban) significantly increase bleeding risk. Patients on anticoagulants should consult their prescribing physician or pharmacist before taking NSAIDs. Acetaminophen is generally a safer over-the-counter alternative for pain in this population."
+  },
+  {
+    "id": "respiratory-triage",
+    "tags": ["cough", "bronchitis", "pneumonia", "shortness of breath", "dyspnea", "respiratory"],
+    "text": "Respiratory triage: cough >3 weeks, fever, dyspnea, chest pain, or pulse oximetry <94% warrants in-person evaluation. Distinguishing bronchitis from pneumonia requires physical exam and possibly chest imaging — diagnosis cannot be made from history alone."
+  },
+  {
+    "id": "crisis-mental-health",
+    "tags": ["hopeless", "suicide", "self-harm", "crisis", "depression", "mental health"],
+    "text": "Mental-health crisis: any expression of hopelessness, suicidal ideation, or self-harm requires immediate compassionate response. Provide US 988 Suicide & Crisis Lifeline (call or text), encourage contact with a trusted person, and emphasize that help is available now. Do not minimize. Do not delay."
+  },
+  {
+    "id": "chest-pain-flag",
+    "tags": ["chest pain", "heart attack", "pressure", "radiating", "angina", "cardiac"],
+    "text": "Chest pain red flags: pressure or squeezing, radiating to arm/jaw/back, with shortness of breath, sweating, or nausea — assume cardiac event until ruled out. Call emergency services immediately. Aspirin 325mg may be given to a conscious patient unless contraindicated."
+  },
+  {
+    "id": "hypertension-context",
+    "tags": ["blood pressure", "hypertension", "bp", "hypertensive"],
+    "text": "Adult BP categories: normal <120/80, elevated 120-129/<80, stage 1 hypertension 130-139/80-89, stage 2 hypertension >=140/90, hypertensive crisis >180/120. A reading >180/120 with symptoms (chest pain, vision change, neurological symptoms) is an emergency."
+  },
+  {
+    "id": "general-disclaimer",
+    "tags": ["any", "general", "advice"],
+    "text": "General principle: this assistant provides triage guidance only — not a diagnosis or treatment. For non-urgent questions, recommend the user contact their primary-care provider. For urgent or red-flag symptoms, recommend emergency services. Always recommend consulting a clinician before changing medication."
+  }
+]
