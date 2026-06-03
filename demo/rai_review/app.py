@@ -69,8 +69,8 @@ st.subheader(f"Workspace · {len(subs)} submission(s)")
 if not subs:
     st.info(
         "No submissions yet. Head to **New submission** to create the first one. "
-        "For a quick demo, use `my_model:MyModel` as the model ref — it's the "
-        "stub model shipped at the repo root."
+        "For a quick demo, use `demo_app.triage_assistant:build_model` as the "
+        "model ref — it's a bundled healthcare RAG you can probe end-to-end."
     )
 else:
     for s in subs[:10]:

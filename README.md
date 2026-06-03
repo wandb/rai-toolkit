@@ -440,6 +440,7 @@ rai_toolkit/
   guardrails/            Input/output guardrails, GuardedModel wrapper
   policies/              YAML policy engine + 13 starter policies
   redteam/               32-attack catalog + AttackRunner
+  prompts/               LLM-judge prompt templates (judge_prompts.py)
   examples/     Public benchmark loaders + curated JSON examples
   assessment/         End-to-end Assessor workflow + HTML report
   workflow/              Review gate: profile, scoping, submission,

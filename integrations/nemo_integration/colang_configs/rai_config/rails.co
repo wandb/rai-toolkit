@@ -42,9 +42,3 @@ define flow check output pii
   $has_pii = execute check_pii(text=$bot_message)
   if $has_pii
     bot refuse pii request
-
-define flow check factuality
-  bot ...
-  $is_factual = execute check_factuality(text=$bot_message)
-  if not $is_factual
-    bot "I need to verify this information. Let me provide a more carefully sourced response."

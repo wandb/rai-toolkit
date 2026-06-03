@@ -231,13 +231,11 @@ st.caption(
 wcol1, wcol2 = st.columns(2)
 weave_project = wcol1.text_input(
     "Weave project",
-    value="responsible-ai",
     placeholder="my-rai-reviews",
     key="weave_project",
 )
 weave_entity = wcol2.text_input(
     "W&B entity (team/user)",
-    value="wandb-smle",
     placeholder="my-team",
     key="weave_entity",
 )

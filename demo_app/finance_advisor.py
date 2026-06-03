@@ -77,12 +77,15 @@ class FinanceAdvisorRAG(BaseModel):
 
     def __init__(self, model: str = "gpt-4o-mini", temperature: float = 0.0) -> None:
         super().__init__()
+        if not os.environ.get("OPENAI_API_KEY"):
+            raise RuntimeError(
+                "OPENAI_API_KEY is not set. This demo app calls a real model so the "
+                "assessment runs on real output — export a key before running."
+            )
         self.model = model
         self.temperature = temperature
         self.corpus = _load_corpus()
-        self._client: AsyncOpenAI | None = None
-        if os.environ.get("OPENAI_API_KEY"):
-            self._client = AsyncOpenAI()
+        self._client = AsyncOpenAI()
 
     async def predict(
         self,
@@ -93,22 +96,6 @@ class FinanceAdvisorRAG(BaseModel):
         snippets = _retrieve(input_text, self.corpus)
         retrieved = "\n\n".join(f"[{s['id']}] {s['text']}" for s in snippets)
         retrieved_with_caller = f"{context}\n\n{retrieved}".strip() if context else retrieved
-
-        if self._client is None:
-            return ModelResponse(
-                output=(
-                    "I provide general financial information, not personalized advice. "
-                    "For lending, investment, or tax decisions, please consult a "
-                    "licensed professional. For suspected fraud, contact your bank "
-                    "through verified channels and report at reportfraud.ftc.gov."
-                ),
-                metadata={
-                    "model": self.model,
-                    "retrieved_ids": [s["id"] for s in snippets],
-                    "retrieved_context": retrieved_with_caller,
-                    "fallback": "no_api_key",
-                },
-            )
 
         completion = await self._client.chat.completions.create(
             model=self.model,

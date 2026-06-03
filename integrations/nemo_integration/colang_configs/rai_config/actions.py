@@ -33,13 +33,3 @@ async def check_pii(text: str) -> bool:
         r"\b(?:\d{4}[-\s]?){3}\d{4}\b",  # Credit card
     ]
     return any(re.search(p, text) for p in pii_patterns)
-
-
-async def check_factuality(text: str) -> bool:
-    """Basic factuality check.
-
-    In production, use FactualityJudge or WeaveHallucinationScorerV1.
-    This is a placeholder that always returns True.
-    """
-    # Placeholder — in production, call an LLM or use a fact-checking service
-    return True

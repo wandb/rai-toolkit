@@ -27,4 +27,3 @@ rails:
     flows:
       - check output toxicity
       - check output pii
-      - check factuality

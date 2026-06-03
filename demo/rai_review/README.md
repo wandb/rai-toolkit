@@ -60,11 +60,11 @@ can run an end-to-end flow without wiring their own model first:
 
 | Model ref | Preset hint | Notes |
 |-----------|---------------|--------|
-| `demo_app.triage_assistant:build_model` | `healthcare` | Small healthcare RAG stub |
-| `demo_app.finance_advisor:build_model` | `financial_services` | Small finance RAG stub |
+| `demo_app.triage_assistant:build_model` | `healthcare` | Small healthcare RAG over a tiny on-disk corpus |
+| `demo_app.finance_advisor:build_model` | `financial_services` | Small finance RAG over a tiny on-disk corpus |
 
-Both fall back to a safe canned response when `OPENAI_API_KEY` is unset so the
-UI still runs on a laptop without keys.
+Both call OpenAI `gpt-4o-mini`, so set `OPENAI_API_KEY` before running — the
+assessment is only meaningful on real model output.
 
 ## Workflow API (library)
 

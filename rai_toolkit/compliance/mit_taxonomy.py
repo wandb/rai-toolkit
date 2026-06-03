@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""MIT AI Risk Repository taxonomy — 7 domains, 23 subdomains.
+"""MIT AI Risk Repository taxonomy — 7 domains, 24 subdomains.
 
 Based on: "The AI Risk Repository: A Comprehensive Meta-Review, Database,
 and Taxonomy of Risks From Artificial Intelligence" (MIT, 2024-2025).
