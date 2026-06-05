@@ -32,7 +32,7 @@ policies:
     trigger:
       # Use a word-boundary regex instead of a substring list. The previous
       # version included "mg" which matched substrings inside words like
-      # "emergency" and "diagnostics" — firing on any clinical-adjacent output.
+      # "emergency" and "diagnostics", firing on any clinical-adjacent output.
       output_matches: "(?i)\\b(mg|dose|dosage|treatment|prescription|diagnosis|symptoms)\\b"
       # Accept any reasonable referral phrasing. The previous list required the
       # literal substring "healthcare provider" and missed common synonyms like
@@ -93,8 +93,8 @@ policies:
     trigger:
       # Scope to queries that actually describe an emergency-indicating
       # presentation. Previously this policy only looked at the model output,
-      # which meant any response that happened to mention "chest pain" — e.g.
-      # a leaked RAG snippet about cardiac triage — fired the policy even
+      # which meant any response that happened to mention "chest pain" (e.g.
+      # a leaked RAG snippet about cardiac triage) fired the policy even
       # when the user asked about a sore shoulder or a PII fabrication.
       # input_matches with word boundaries scopes the rule to genuine
       # emergency-indicating user queries.
@@ -127,7 +127,7 @@ policies:
       #   2. Internal snippet IDs of the form [nw-<slug>].
       # Either is sufficient evidence the retrieved chunk is being surfaced
       # to the end user untransformed.
-      output_matches: "(?is)(— Source from .* knowledge base —|\\[nw-[a-z0-9\\-]+\\])"
+      output_matches: "(?is)(\\u2014 Source from .* knowledge base \\u2014|\\[nw-[a-z0-9\\-]+\\])"
     frameworks:
       - "HIPAA-164.312-a-1"
       - "EU-AI-Act-Art-10"

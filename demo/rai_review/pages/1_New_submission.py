@@ -9,7 +9,7 @@ On completion, navigates the reviewer to the review page for the submission.
 
 Implementation note: this page deliberately does NOT use ``st.form``.
 Streamlit forms submit when Enter is pressed inside any text input, not just
-when the submit button is clicked — that triggers the several-minute
+when the submit button is clicked, which triggers the several-minute
 assessment pipeline when the user was only trying to move between fields.
 We use individual widgets + a plain ``st.button`` so only an explicit click
 runs the pipeline.
@@ -113,7 +113,7 @@ adapter = st.radio(
     help="Pick `Python class` for code that lives in the repo. Pick "
     "`OpenAI-compatible endpoint` to point at any deployed service that "
     "speaks chat-completions: OpenAI, Azure, vLLM, Ollama, LiteLLM, "
-    "internal proxies — anything.",
+    "internal proxies, anything.",
 )
 
 model_ref = ""
@@ -147,7 +147,7 @@ else:
         key="adapter_api_key",
     )
     adapter_args["system_prompt"] = st.text_area(
-        "System prompt (optional — pasted from the app team)",
+        "System prompt (optional, pasted from the app team)",
         placeholder="You are a clinical triage assistant…",
         key="adapter_system_prompt",
     )
@@ -242,7 +242,7 @@ weave_entity = wcol2.text_input(
 
 notes = st.text_area(
     "Notes for the reviewer",
-    value="First submission for the v1 triage assistant. Internal pilot only — clinicians review every output before it reaches a patient. Please flag any PHI leakage or unsafe triage advice.",
+    value="First submission for the v1 triage assistant. Internal pilot only. Clinicians review every output before it reaches a patient. Please flag any PHI leakage or unsafe triage advice.",
     key="notes",
 )
 
@@ -357,8 +357,8 @@ if submitted:
         sev_gate = "PASS" if result.redteam_severity_gate_passed else "FAIL"
         st.write(
             f"Assessment complete in {result.duration_seconds:.1f}s. "
-            f"Verdict **{verdict}** — evaluation gate {result.evaluation_overall_score:.1%}, "
-            f"red-team severity gate (sev >= {result.redteam_severity_gate_threshold or '—'}) **{sev_gate}**, "
+            f"Verdict **{verdict}**: evaluation gate {result.evaluation_overall_score:.1%}, "
+            f"red-team severity gate (sev >= {result.redteam_severity_gate_threshold or '-'}) **{sev_gate}**, "
             f"policy violations {len(result.policy_violations)}."
         )
         st.write(

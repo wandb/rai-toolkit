@@ -11,7 +11,7 @@ the third-party tool boundary is explicit before the PyPI release.
 When Garak is installed, this module exposes :func:`run_garak_probes`,
 :class:`GarakProbeSpec`, :class:`RAIGenerator`, and
 :func:`default_garak_probes`. When it isn't, only ``GARAK_INSTALLED``
-exists — slim installs stay importable.
+exists. Slim installs stay importable.
 """
 
 from integrations.garak_integration.adapter import GARAK_INSTALLED

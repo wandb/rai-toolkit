@@ -59,7 +59,7 @@ def load_model(model_ref: str) -> Any:
 
 
 def load_model_from_profile(profile: ApplicationProfile) -> Any:
-    """Load the model the profile points at — Python class or OpenAI endpoint.
+    """Load the model the profile points at: Python class or OpenAI endpoint.
 
     The intake form lets the submitter pick the adapter; the chat panel
     and the assessment pipeline both call this so they probe the same
@@ -93,7 +93,7 @@ def load_model_from_profile(profile: ApplicationProfile) -> Any:
             )
         except Exception as e:
             # Don't fail the whole load if NeMo can't initialize (missing
-            # extra, bad colang config, etc.) — surface it loudly so the
+            # extra, bad colang config, etc.); surface it loudly so the
             # reviewer sees the toggle didn't take effect.
             raise RuntimeError(
                 f"Could not apply NeMo Guardrails (install with "
@@ -113,7 +113,7 @@ def run_assessment(
     the result, and an error message if the run failed.
 
     ``dataset_limit_override`` forces a lower row cap than the risk tier
-    would otherwise demand — used by the Streamlit demo-mode switch so
+    would otherwise demand, used by the Streamlit demo-mode switch so
     first-time runs finish in ~30s instead of several minutes.
     """
     registry = get_registry()

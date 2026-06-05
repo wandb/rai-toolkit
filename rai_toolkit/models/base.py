@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Base model interface — platform-agnostic model abstraction."""
+"""Base model interface: platform-agnostic model abstraction."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ class BaseModel(ABC):
         Without this, only ``BaseModel`` subclasses that opted into
         ``@_tracing.traced`` (e.g. ``GuardedModel``) emitted a Weave span,
         and their span output was a flat dict. Plain subclasses like the
-        demo RAG apps emitted no span of their own — the ``ModelResponse``
+        demo RAG apps emitted no span of their own. The ``ModelResponse``
         dataclass surfaced only as the output of whatever parent op called
         them (eval pipeline, chat probe, red-team), where Weave's
         dataclass serializer nests fields under a ``result`` wrapper.
@@ -75,7 +75,7 @@ class BaseModel(ABC):
         Skips:
         - subclasses that already wrapped ``predict`` with
           ``_tracing.traced`` (detected via the ``__rai_traced_op_name__``
-          sentinel) — keeps their custom op name (e.g.
+          sentinel), keeps their custom op name (e.g.
           ``rai.guardrails.predict``) intact.
         - subclasses that don't override ``predict`` (still abstract).
         """

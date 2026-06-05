@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Inbox — list every submission, filter by status."""
+"""Inbox: list every submission, filter by status."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ for s in subs:
             )
             cols[2].caption(f"Chosen: **{s.decision.decision.value}**")
         else:
-            cols[2].caption("—")
+            cols[2].caption("-")
         with cols[3]:
             if st.button("Open", key=f"open-{s.submission_id}"):
                 st.session_state["active_submission"] = s.submission_id

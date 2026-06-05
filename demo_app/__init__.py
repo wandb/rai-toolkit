@@ -4,7 +4,7 @@
 
 """Demo applications for the RAI review flow.
 
-These are *the apps under review* — what an app team would point the RAI
+These are *the apps under review*, what an app team would point the RAI
 team at. They live outside ``rai_toolkit/`` because they're product
 apps, not part of the toolkit.
 """

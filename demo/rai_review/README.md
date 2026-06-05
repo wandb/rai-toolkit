@@ -5,22 +5,22 @@ assessment pipeline in an app-team → RAI-team **review gate**.
 
 ## Flow
 
-1. **Intake** — app team fills out an `ApplicationProfile` (industry, data
+1. **Intake**: app team fills out an `ApplicationProfile` (industry, data
    types, deployment context, capabilities, model adapter).
-2. **Scoping** — `scope_assessor()` derives risk tier (escalating on
+2. **Scoping**: `scope_assessor()` derives risk tier (escalating on
    PHI / biometric / credit / legal / `autonomous_action`), validates explicit
    datasets for real runs (or demo fixture bundles in Demo mode), red-team
    severity cap, and policies. Every choice is recorded in a `ScopingDecision`.
-3. **Automated assessment** — the scoped `Assessor` pipeline runs and
+3. **Automated assessment**: the scoped `Assessor` pipeline runs and
    produces a `AssessmentResult`.
-4. **Auto-recommendation** — `auto_decide()` turns findings into an
+4. **Auto-recommendation**: `auto_decide()` turns findings into an
    APPROVE / REQUEST_CHANGES / REJECT recommendation with a per-finding
    remediation list.
-5. **Interactive probing** — the Review page has a chat panel that talks to the
+5. **Interactive probing**: the Review page has a chat panel that talks to the
    *same* model the assessment ran against. The reviewer pins concerning
    turns as a `ManualFinding`; `reconcile_manual_findings()` downgrades the
    auto-recommendation accordingly (e.g. one critical pin alone → REJECT).
-6. **Human decision** — reviewer signs off (approve / request_changes / reject)
+6. **Human decision**: reviewer signs off (approve / request_changes / reject)
    with notes. Overrides of the auto-recommendation stay in the record.
 
 ## Run
@@ -47,9 +47,9 @@ part of the audit trail.
 
 Two ways to point the UI at the system under review:
 
-- **Python class** (`package.module:ClassName` or `package.module:factory`) —
+- **Python class** (`package.module:ClassName` or `package.module:factory`):
   for code in this repo, including the small reference apps below.
-- **OpenAI-compatible endpoint** — base URL, model name, API key, optional
+- **OpenAI-compatible endpoint**: base URL, model name, API key, optional
   system prompt (OpenAI, Azure, vLLM, Ollama, LiteLLM, etc.). Implemented in
   `rai_toolkit/models/openai_compatible.py`.
 
@@ -63,10 +63,10 @@ can run an end-to-end flow without wiring their own model first:
 | `demo_app.triage_assistant:build_model` | `healthcare` | Small healthcare RAG over a tiny on-disk corpus |
 | `demo_app.finance_advisor:build_model` | `financial_services` | Small finance RAG over a tiny on-disk corpus |
 
-Both call OpenAI `gpt-4o-mini`, so set `OPENAI_API_KEY` before running — the
+Both call OpenAI `gpt-4o-mini`, so set `OPENAI_API_KEY` before running. The
 assessment is only meaningful on real model output.
 
 ## Workflow API (library)
 
-The same types and functions are available without Streamlit — see the main
+The same types and functions are available without Streamlit, see the main
 [README](../../README.md) section **Workflow package (`rai_toolkit.workflow`)**.

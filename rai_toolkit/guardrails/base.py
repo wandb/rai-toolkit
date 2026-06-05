@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Base guardrail interface — platform-agnostic guardrail abstraction."""
+"""Base guardrail interface: platform-agnostic guardrail abstraction."""
 
 from __future__ import annotations
 

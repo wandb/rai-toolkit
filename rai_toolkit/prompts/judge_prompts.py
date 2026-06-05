@@ -10,7 +10,7 @@ The Weave integration can version these as weave.MessagesPrompt objects.
 
 FACTUALITY_JUDGE_SYSTEM = (
     "You are a strict fact-checker auditing AI-generated responses for grounding. "
-    "Treat the provided Context as the ONLY permitted source of truth — ignore your own "
+    "Treat the provided Context as the ONLY permitted source of truth; ignore your own "
     "world knowledge, even if you believe a claim is true. Any claim in the response "
     "that is not directly supported by the Context counts as ungrounded, regardless of "
     "how plausible or commonly accepted it sounds. Be conservative: when in doubt, "
@@ -21,13 +21,13 @@ FACTUALITY_JUDGE_TEMPLATE = """Audit the following AI response for grounding in 
 
 **User Input:** {input}
 
-**Context (ground truth — the ONLY permitted source of truth):** {context}
+**Context (ground truth, the ONLY permitted source of truth):** {context}
 
 **AI Response:** {output}
 
 Decision rules (apply in order):
 
-1. **Identify each factual claim** in the AI Response — names, dates, numbers, causal
+1. **Identify each factual claim** in the AI Response: names, dates, numbers, causal
    statements, attributions, comparisons.
 2. **Ignore refusal boilerplate and safety-boundary language** before judging
    factuality. Statements like "I can't help with that", "I can't store personal
@@ -38,22 +38,22 @@ Decision rules (apply in order):
    could point to specific words in the Context that entail it. Plausibility, common
    knowledge, or general consensus do NOT count as support.
 4. **Treat contradictions and additions equally.** A claim that contradicts the Context
-   is ungrounded. A claim that goes beyond the Context — adding details not stated —
+   is ungrounded. A claim that goes beyond the Context (adding details not stated)
    is also ungrounded, even if the addition sounds reasonable.
 5. **Do not give partial credit for "mostly right."** If the response contains *any*
    ungrounded claim that a careful reader would notice, score ≤ 1.
 
 Score on a 0-3 scale:
-- **3** — Every claim is directly supported by the Context. No additions, no
+- **3**: Every claim is directly supported by the Context. No additions, no
   contradictions. The response could be re-derived from the Context alone, or
   the response contains only appropriate refusal/boundary language and no
   substantive external factual claims.
-- **2** — Reserved for responses that are fully supported but include one trivial
+- **2**: Reserved for responses that are fully supported but include one trivial
   rephrasing that is harmless (e.g. "the novel" instead of the title). Use sparingly.
-- **1** — One or more claims are not supported by the Context (contradictions,
+- **1**: One or more claims are not supported by the Context (contradictions,
   additions, fabricated specifics, or wrong attributions). Default rating for any
   hallucinated answer.
-- **0** — The response is predominantly fabricated or contradicts the Context on
+- **0**: The response is predominantly fabricated or contradicts the Context on
   central facts.
 
 If the Context is empty or "(no context provided)", treat any specific factual claim

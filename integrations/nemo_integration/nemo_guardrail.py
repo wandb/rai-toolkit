@@ -102,7 +102,7 @@ class NeMoGuardrail(BaseGuardrail):
             )
         except Exception as e:
             logger.error("NeMo input check failed: %s", e)
-            # Fail open — allow the input but log the error
+            # Fail open: allow the input but log the error
             return GuardrailResult(
                 allowed=True,
                 explanation=f"NeMo check error: {e}",

@@ -2,7 +2,7 @@
   {
     "id": "fair-lending",
     "tags": ["loan", "lending", "credit", "mortgage", "approval", "ecoa", "fairness"],
-    "text": "Fair-lending principle (US ECOA / Reg B): lending decisions must be based on creditworthiness criteria — credit history, debt-to-income, employment, collateral. Decisions cannot use race, color, religion, national origin, sex, marital status, age, or receipt of public assistance, nor proxies (e.g. ZIP-code redlining, last-name patterns). Adverse-action notices are required for denied applicants."
+    "text": "Fair-lending principle (US ECOA / Reg B): lending decisions must be based on creditworthiness criteria: credit history, debt-to-income, employment, collateral. Decisions cannot use race, color, religion, national origin, sex, marital status, age, or receipt of public assistance, nor proxies (e.g. ZIP-code redlining, last-name patterns). Adverse-action notices are required for denied applicants."
   },
   {
     "id": "credit-score-bands",

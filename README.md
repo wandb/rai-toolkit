@@ -99,15 +99,15 @@ and traces.
 The main abstraction is not just a scorecard. It is a review gate that mirrors
 how RAI teams actually approve systems:
 
-1. **Intake** — an app team declares the industry, data types, deployment
+1. **Intake**: an app team declares the industry, data types, deployment
    context, model adapter, and intended capabilities.
-2. **Scope** — the toolkit derives datasets, policies, red-team severity, and
+2. **Scope**: the toolkit derives datasets, policies, red-team severity, and
    risk tier from that profile.
-3. **Assess** — `rai assess` runs evaluation, red-team probes, policy checks,
+3. **Assess**: `rai assess` runs evaluation, red-team probes, policy checks,
    framework coverage, and cost estimates.
-4. **Probe** — a reviewer chats with the same model and pins concerning turns
+4. **Probe**: a reviewer chats with the same model and pins concerning turns
    as manual findings.
-5. **Decide** — the final approval / request-changes / reject decision is
+5. **Decide**: the final approval / request-changes / reject decision is
    stored with rationale, remediation items, report artifacts, and trace links.
 
 That is the wedge: automated evidence plus human review in one record.
@@ -237,16 +237,16 @@ scorer-based safety checks. Same taxonomy as evaluation, so runtime and
 pre-deployment are driven by the same compliance profile.
 
 ### 7. Weave integration
-Deep Weave integration is available as an optional extra — traces,
+Deep Weave integration is available as an optional extra. Traces,
 evaluations, leaderboards, cost tracking, and monitoring all plug in
 through adapters.
 
 ### 8. Clean optional integration boundary
 `rai_toolkit/` contains the vendor-neutral core. Third-party bridges live in
 `integrations/` and are enabled only by explicit extras or direct imports:
-- `integrations.pyrit_integration` — optional PyRIT adapter
+- `integrations.pyrit_integration`: optional PyRIT adapter
   (`pip install -e ".[pyrit]"` from a clone of this repo).
-- `integrations.garak_integration` — optional Garak adapter
+- `integrations.garak_integration`: optional Garak adapter
   (`pip install -e ".[garak]"` from a clone of this repo).
 
 ---
@@ -265,7 +265,7 @@ cd rai-toolkit
 # Core library only
 pip install -e .
 
-# Weave tracing (recommended — lightweight, no ML deps)
+# Weave tracing (recommended, lightweight, no ML deps)
 pip install -e ".[weave]"
 
 # Weave tracing + LLM-judge scorers
@@ -337,14 +337,14 @@ asyncio.run(main())
 The **workflow** layer wraps assessment with an RAI review gate:
 - Application profile intake (`ApplicationProfile`, `Industry`,
   `DeploymentContext`, `RiskTier`, model-adapter fields).
-- Risk-aware test scoping (`scope_assessor`, `ScopingDecision`) — auto-
+- Risk-aware test scoping (`scope_assessor`, `ScopingDecision`): auto-
   escalates risk tier on PHI / biometric / credit / legal / minors /
   autonomous-action; tier-derives dataset cap and red-team severity.
 - Submission lifecycle (`Submission`, `SubmissionStatus`, `StateTransition`).
 - Decision records (`ApprovalDecision`, `RemediationItem`,
   `auto_decide()`, `submit_decision()`).
 - Manual findings from interactive probing (`ManualFinding`,
-  `reconcile_manual_findings()`) — reviewer-pinned chat turns fold into
+  `reconcile_manual_findings()`): reviewer-pinned chat turns fold into
   the auto-recommendation.
 
 Import from `rai_toolkit.workflow` for structured intake → assess →
@@ -379,9 +379,9 @@ while policy checks still run on the converted `EvaluationResults`. Set
 Every assessment run attaches a rough **USD upper bound** for judge-style
 scoring (`cost_estimate` in JSON / HTML), computed in
 `rai_toolkit/evaluation/cost_estimate.py` from public list prices. It is not
-a bill — it is an order-of-magnitude sanity check for whitepapers and exec
+a bill; it is an order-of-magnitude sanity check for whitepapers and exec
 summaries. For live spend, rely on **Weave's built-in per-op cost
-tracking** — it records token counts × model price automatically once
+tracking**: it records token counts × model price automatically once
 `weave.init()` has run.
 
 ## Drift monitoring & reassessment cadence (`rai_toolkit.monitoring`)
@@ -479,13 +479,13 @@ Apache 2.0. See [`LICENSE`](LICENSE).
 Optional integrations are listed in [`NOTICE`](NOTICE) along with their
 licenses and citation requirements. Notably:
 
-- **PyRIT** (enabled via the `[pyrit]` extra — see [Install](#install)) —
+- **PyRIT** (enabled via the `[pyrit]` extra, see [Install](#install)):
   the `integrations/pyrit_integration/adapter.py` module subclasses and runs
   [microsoft/PyRIT](https://github.com/microsoft/PyRIT) (MIT). If you
   publish work that uses this adapter, please cite the PyRIT paper
   ([Lopez Munoz et al., 2024, arXiv:2410.02828](https://arxiv.org/abs/2410.02828));
   the BibTeX block is in [`NOTICE`](NOTICE).
-- **Garak** (enabled via the `[garak]` extra — see [Install](#install)) —
+- **Garak** (enabled via the `[garak]` extra, see [Install](#install)):
   the `integrations/garak_integration/adapter.py` module bridges selected
   NVIDIA/garak probes into the toolkit's `RedTeamReport` shape. If you
   publish work that uses this adapter, cite the Garak paper listed in
@@ -495,13 +495,13 @@ licenses and citation requirements. Notably:
 
 The built-in mappings reference public frameworks and regulations:
 
-- [MIT AI Risk Repository](https://airisk.mit.edu/) — domain taxonomy of
+- [MIT AI Risk Repository](https://airisk.mit.edu/): domain taxonomy of
   seven domains and 24 subdomains.
 - [NIST AI Risk Management Framework 1.0](https://www.nist.gov/itl/ai-risk-management-framework)
-  — voluntary framework for managing AI risks.
+  : voluntary framework for managing AI risks.
 - [EU AI Act, Regulation (EU) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng)
   and [Article 15 guidance](https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-15)
-  — used as reference material for high-risk system controls.
+  : used as reference material for high-risk system controls.
 
 ## Limitations
 

@@ -6,22 +6,22 @@
 
 Three render surfaces consume this view:
 
-* :func:`rai_toolkit.assessment.assessor._render_html` — the standalone HTML
+* :func:`rai_toolkit.assessment.assessor._render_html`: the standalone HTML
   report attached to ``AssessmentResult.to_html``.
-* :func:`integrations.weave_integration.views.render_assessment_html` — the
+* :func:`integrations.weave_integration.views.render_assessment_html`: the
   Weave panel HTML published via ``weave.set_view``.
-* ``demo/rai_review/pages/3_Review.py`` — the Streamlit reviewer UI.
+* ``demo/rai_review/pages/3_Review.py``: the Streamlit reviewer UI.
 
 The three surfaces differ in *presentation* (sandboxed CSS panel sizing,
 interactive Streamlit widgets, downloadable static HTML) but share the same
 *structure*: the same gates, the same scores, the same framework table, the
 same findings, the same coverage gaps. This module pulls every shared
 derivation into one place so a future field doesn't have to be added in
-three independent renderers (which is how earlier bugs slipped in —
+three independent renderers (which is how earlier bugs slipped in,
 e.g. the view computing un-assessed counts from a field that didn't exist).
 
 Each renderer keeps its own surface-specific bells (chat probing,
-decision buttons, evidence drill-downs) — only the report data passes
+decision buttons, evidence drill-downs). Only the report data passes
 through this view.
 """
 
@@ -101,7 +101,7 @@ class FindingRow:
     ``row_label`` is pre-resolved from ``dataset_row.index`` to "row N"
     (1-based) so renderers don't have to remember where row identity lives
     on the underlying finding dict. ``policy_name`` carries the deferred
-    policy that fired — important context when the finding's `message`
+    policy that fired, important context when the finding's `message`
     field doesn't repeat the policy slug.
     """
 
@@ -138,8 +138,8 @@ class AttackRow:
 class AssessmentReportView:
     """Structured, renderer-agnostic view of an :class:`AssessmentResult`.
 
-    Build via :meth:`from_result`. Renderers must consume only this object —
-    never poke ``AssessmentResult`` fields directly — so behavior stays
+    Build via :meth:`from_result`. Renderers must consume only this object
+    (never poke ``AssessmentResult`` fields directly) so behavior stays
     consistent across the standalone report, the Weave panel, and the
     Streamlit reviewer UI.
     """
@@ -225,7 +225,7 @@ class AssessmentReportView:
         )
 
         threshold = int(result.redteam_severity_gate_threshold or 0)
-        threshold_label = str(threshold) if threshold else "—"
+        threshold_label = str(threshold) if threshold else "-"
 
         gates = [
             GateRow("eval", "eval gate", eval_gate),
@@ -268,7 +268,7 @@ class AssessmentReportView:
         gap_rows = [
             CoverageGapRow(
                 scorer=str(g.get("scorer", "scorer")),
-                reason=str(g.get("reason", "—")),
+                reason=str(g.get("reason", "-")),
                 count=int(g.get("count") or 0),
             )
             for g in (result.coverage_gaps or [])
@@ -348,16 +348,16 @@ def _framework_row(f: Any) -> FrameworkRow:
 def _finding_row(fnd: dict[str, Any]) -> FindingRow:
     row_dict = fnd.get("dataset_row") or {}
     row_idx = row_dict.get("index") if isinstance(row_dict, dict) else None
-    row_label = f"row {row_idx + 1}" if isinstance(row_idx, int) else "—"
+    row_label = f"row {row_idx + 1}" if isinstance(row_idx, int) else "-"
     return FindingRow(
-        scorer=str(fnd.get("scorer_name") or fnd.get("scorer") or "—"),
-        category=str(fnd.get("category") or fnd.get("mit_category") or "—"),
+        scorer=str(fnd.get("scorer_name") or fnd.get("scorer") or "-"),
+        category=str(fnd.get("category") or fnd.get("mit_category") or "-"),
         row_label=row_label,
         reason=str(
             fnd.get("message")
             or fnd.get("explanation")
             or fnd.get("reason")
-            or "—"
+            or "-"
         ),
         policy_name=str(fnd.get("policy_name") or ""),
         weave_trace_url=fnd.get("weave_call_url"),
@@ -369,7 +369,7 @@ def _attack_row(row: dict[str, Any]) -> AttackRow:
     css_class, label = _SEVERITY_LABELS.get(severity, ("low", f"SEV {severity}"))
     return AttackRow(
         attack_id=str(row.get("attack_id") or "attack"),
-        category=str(row.get("category") or "—"),
+        category=str(row.get("category") or "-"),
         severity=severity,
         severity_label=label,
         severity_class=css_class,

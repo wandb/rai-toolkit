@@ -4,7 +4,7 @@
 
 """Filesystem-backed review registry.
 
-Not a database — just JSON on disk under ``rai_workspace/`` so the demo is
+Not a database, just JSON on disk under ``rai_workspace/`` so the demo is
 self-contained and reproducible. Swap this class for a real backend when
 the review gate graduates past MWP.
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""GuardedModel — wraps any model with guardrails and scorer checks."""
+"""GuardedModel: wraps any model with guardrails and scorer checks."""
 
 from __future__ import annotations
 

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Base scorer interface — the core abstraction users implement for custom scorers."""
+"""Base scorer interface: the core abstraction users implement for custom scorers."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class ScorerResult:
         assessed: True when the scorer produced a real signal. False when
             the scorer could not evaluate this row (missing context, parser
             failure, scorer error). Un-assessed results are excluded from
-            aggregations and never trigger policy violations — surface the
+            aggregations and never trigger policy violations; surface the
             gap honestly instead of inflating with neutral defaults.
     """
 

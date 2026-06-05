@@ -495,15 +495,15 @@ def _stringify_answer(answer: Any) -> str:
 def _healthbench_triage_loader(limit: int) -> list[dict[str, Any]]:
     """Stream HealthBench (OpenAI), filter to the ``emergency_referrals`` theme.
 
-    HealthBench is rubric-graded — each prompt has physician-written criteria,
+    HealthBench is rubric-graded: each prompt has physician-written criteria,
     not a single gold answer. We preserve those criteria in ``rubrics`` and use
     ``ideal_completions_data.ideal_completion`` (populated for ~80% of rows) as
     the toolkit's compatibility ``expected`` field, skipping rows where it is
     missing.
 
     HealthBench prompts have no retrieval context, so ``context`` is empty.
-    The toolkit's ``FactualityJudge`` will mark these rows as un-assessed —
-    that is the honest answer for a benchmark that does not include grounding
+    The toolkit's ``FactualityJudge`` will mark these rows as un-assessed.
+    That is the honest answer for a benchmark that does not include grounding
     evidence.
 
     Reference: https://arxiv.org/abs/2505.08775 (HealthBench, OpenAI 2025).

@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Finance Information Assistant — a small RAG demo app for the financial-services preset.
+"""Finance Information Assistant: a small RAG demo app for the financial-services preset.
 
 Same shape as ``demo_app.triage_assistant`` but tuned for the financial-
 services review flow: lending fairness, investment disclosures, fraud
 red-flags, debt strategy, KYC/AML basics. The system prompt is
-deliberately conservative — refuses to give personalized investment
+deliberately conservative: refuses to give personalized investment
 advice, redirects to fiduciaries, surfaces fair-lending principles when
 the user asks about loan decisions.
 
@@ -35,7 +35,7 @@ _CORPUS_PATH = Path(__file__).resolve().parent / "finance_corpus.json"
 SYSTEM_PROMPT = """You are a financial-information assistant.
 - You provide general educational information, never personalized investment, lending, or tax advice.
 - Always recommend consulting a licensed professional for specific decisions: a fiduciary advisor (CFP, CFA) for investments, a CPA or enrolled agent for taxes, a non-profit credit counselor for debt.
-- For lending or loan questions, only consider creditworthiness criteria (income, credit history, debt ratios). Never use protected-class characteristics (race, gender, age, ZIP code as race proxy) — these are unlawful under fair-lending rules.
+- For lending or loan questions, only consider creditworthiness criteria (income, credit history, debt ratios). Never use protected-class characteristics (race, gender, age, ZIP code as race proxy). These are unlawful under fair-lending rules.
 - For suspected fraud, recommend the user contact their institution through verified channels and file at reportfraud.ftc.gov.
 - Do not promise specific returns, guaranteed approvals, or refund amounts.
 - Cite the retrieved guidance when relevant. If the retrieved context does not cover the question, say so explicitly and recommend a licensed professional."""
@@ -50,7 +50,7 @@ def _tokenize(s: str) -> set[str]:
 
 
 def _retrieve(query: str, corpus: list[dict[str, Any]], k: int = 2) -> list[dict[str, Any]]:
-    """Naive tag-overlap retrieval — same approach as the triage app."""
+    """Naive tag-overlap retrieval: same approach as the triage app."""
     q_tokens = _tokenize(query)
     scored: list[tuple[int, dict[str, Any]]] = []
     for snippet in corpus:
@@ -80,7 +80,7 @@ class FinanceAdvisorRAG(BaseModel):
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. This demo app calls a real model so the "
-                "assessment runs on real output — export a key before running."
+                "assessment runs on real output. Export a key before running."
             )
         self.model = model
         self.temperature = temperature

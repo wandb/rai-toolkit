@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Policy engine — loads and evaluates policy sets against scorer results."""
+"""Policy engine: loads and evaluates policy sets against scorer results."""
 
 from __future__ import annotations
 
@@ -161,7 +161,7 @@ def _match_policy_against_result(
     """Apply a policy to one scorer result. Returns a violation if triggered.
 
     Un-assessed scorer results (``assessed=False``) never trigger a violation.
-    A scorer that could not evaluate a row produced no signal — counting that
+    A scorer that could not evaluate a row produced no signal; counting that
     as a failure would be the same kind of synthetic-default credibility leak
     we are trying to avoid.
     """
@@ -248,7 +248,7 @@ def _check_content_triggers(
     Substring lists (``*_contains`` / ``*_missing``) match case-insensitively
     against the raw text. Regex triggers (``*_matches``) match against the raw
     text and are case-sensitive unless the pattern includes an inline ``(?i)``
-    flag — mirroring the existing convention.
+    flag, mirroring the existing convention.
 
     A trigger with no content conditions returns True (vacuously satisfied);
     scorer-only policies are filtered out earlier in the caller.

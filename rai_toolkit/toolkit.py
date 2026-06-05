@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""RAIToolkit — top-level orchestrator for the Responsible AI toolkit.
+"""RAIToolkit: top-level orchestrator for the Responsible AI toolkit.
 
 Provides a unified interface for compliance mapping, evaluation, and guardrails.
 """

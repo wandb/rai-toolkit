@@ -7,13 +7,13 @@ boundaries for, the third-party software listed below. None of these
 dependencies are bundled in the core package.
 
 ================================================================================
-PyRIT — Python Risk Identification Tool for generative AI
+PyRIT: Python Risk Identification Tool for generative AI
 ================================================================================
 
   Project:  https://github.com/microsoft/PyRIT
   License:  MIT
   Pip extra: `pip install rai-toolkit[pyrit]`
-  Used by:  integrations/pyrit_integration/adapter.py — subclasses
+  Used by:  integrations/pyrit_integration/adapter.py subclasses
             `pyrit.prompt_target.PromptTarget`, consumes
             `pyrit.models.AttackOutcome` / `Message`, and initializes
             `pyrit.memory.CentralMemory`. The adapter translates PyRIT
@@ -53,13 +53,13 @@ The tool itself is also citable via the upstream CITATION.cff entry
   doi:10.48550/arXiv.2410.02828, 2024.
 
 ================================================================================
-Garak — Generative AI Red-teaming & Assessment Kit
+Garak: Generative AI Red-teaming & Assessment Kit
 ================================================================================
 
   Project:  https://github.com/NVIDIA/garak
   License:  Apache-2.0
   Pip extra: `pip install rai-toolkit[garak]`
-  Used by:  integrations/garak_integration/adapter.py — wraps selected
+  Used by:  integrations/garak_integration/adapter.py wraps selected
             Garak probes with a toolkit BaseModel-backed generator and
             translates probe results into the toolkit's RedTeamReport shape.
             The default `rai assess` path does not invoke this adapter; it
@@ -79,13 +79,13 @@ requested by the upstream project:
 
 
 ================================================================================
-HealthBench — Evaluation dataset for medical conversations
+HealthBench: Evaluation dataset for medical conversations
 ================================================================================
 
   Project:  https://huggingface.co/datasets/openai/healthbench
   Paper:    https://arxiv.org/abs/2505.08775
   License:  MIT
-  Used by:  rai_toolkit/examples/registry.py — the
+  Used by:  rai_toolkit/examples/registry.py: the
             `_healthbench_triage_loader` streams the upstream dataset
             from HuggingFace at runtime (no copy is bundled). Reachable
             via the `healthbench-triage` slug; loads the

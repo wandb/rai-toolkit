@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""AI Governance Review — entry page.
+"""AI Governance Review: entry page.
 
 Run with::
 
@@ -47,7 +47,7 @@ with col2:
     st.subheader("2. Assess")
     st.markdown(
         "The toolkit picks datasets, scorers, red-team severity, and policies "
-        "based on the profile — then runs the full assessment pipeline. "
+        "based on the profile, then runs the full assessment pipeline. "
         "Every choice is recorded in the scoping rationale."
     )
 
@@ -70,7 +70,7 @@ if not subs:
     st.info(
         "No submissions yet. Head to **New submission** to create the first one. "
         "For a quick demo, use `demo_app.triage_assistant:build_model` as the "
-        "model ref — it's a bundled healthcare RAG you can probe end-to-end."
+        "model ref. It's a bundled healthcare RAG you can probe end-to-end."
     )
 else:
     for s in subs[:10]:

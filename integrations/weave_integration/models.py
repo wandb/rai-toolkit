@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Weave model adapter — wraps rai_toolkit BaseModel as weave.Model."""
+"""Weave model adapter: wraps rai_toolkit BaseModel as weave.Model."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ class WeaveModel(weave.Model):
 class WeaveOpenAIModel(weave.Model):
     """Direct OpenAI model with Weave tracking. No rai_toolkit dependency.
 
-    Use this when you don't need the BaseModel abstraction — just a
+    Use this when you don't need the BaseModel abstraction, just a
     quick Weave-traced OpenAI wrapper for demos.
     """
 

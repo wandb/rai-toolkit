@@ -13,7 +13,7 @@ out to `weave.op` when the user opts in via `Assessor(weave_project=...)` or
 Design goals:
 - Zero overhead when disabled (decorator returns the function unchanged on
   first call, so subsequent calls skip the check entirely).
-- Graceful degradation when `weave` isn't installed — we log once and keep
+- Graceful degradation when `weave` isn't installed: we log once and keep
   going with a no-op.
 - Per-call UI URLs available inside traced functions via
   :func:`current_call_url`, so the assessment report can deep-link back to
@@ -94,7 +94,7 @@ def init_tracing(project: str, entity: str | None = None) -> Any | None:
     # Eagerly import the Weave integration so its renderers/publishers are
     # registered before any traced op fires ``publish_view``. Soft import:
     # if the integration package isn't on the path (slim install), the
-    # toolkit still works — view publishing just becomes a no-op.
+    # toolkit still works; view publishing just becomes a no-op.
     try:
         import integrations.weave_integration  # noqa: F401
     except ImportError as e:
@@ -189,7 +189,7 @@ def register_op_extensions(op_name: str, **op_kwargs: Any) -> None:
     ``call_display_name``, ``postprocess_output``, or ``color``. Merged into
     the op kwargs the next time :func:`traced` lazily creates the op.
 
-    Calling twice for the same ``op_name`` is additive — later registrations
+    Calling twice for the same ``op_name`` is additive; later registrations
     overwrite individual keys but don't drop previously-registered ones.
     """
     _OP_EXTENSIONS.setdefault(op_name, {}).update(op_kwargs)
@@ -225,7 +225,7 @@ def publish_view(name: str, payload: Any, mimetype: str = "text/html") -> None:
     try:
         body = renderer(payload)
         publisher(name, body, mimetype)
-    except Exception as e:  # pragma: no cover — view publishing is cosmetic
+    except Exception as e:  # pragma: no cover, view publishing is cosmetic
         logger.debug("publish_view(%s) failed: %s", name, e)
 
 

@@ -9,7 +9,7 @@ human-readable ``ScopingDecision`` explaining *why* each choice was made.
 The explanation is important: reviewers need to see the scope rationale to
 trust the assessment that follows.
 
-Rules are deliberately simple and data-driven — keep them readable so the
+Rules are deliberately simple and data-driven, keep them readable so the
 whitepaper can show the full table without hand-waving.
 """
 
@@ -54,10 +54,10 @@ class ScopingDecision:
             "**Scoping decisions**",
             "",
             f"- Preset: `{self.preset}`",
-            f"- Datasets: `{', '.join(self.datasets) if self.datasets else '—'}`",
+            f"- Datasets: `{', '.join(self.datasets) if self.datasets else '-'}`",
             f"- Red-team: {'on' if self.run_redteam else 'off'} "
             f"(max severity {self.redteam_max_severity})",
-            f"- Dataset row cap: {self.dataset_limit if self.dataset_limit else '—'}",
+            f"- Dataset row cap: {self.dataset_limit if self.dataset_limit else '-'}",
             f"- Effective risk tier: {self.effective_risk_tier.value}",
         ]
         if self.weave_project:

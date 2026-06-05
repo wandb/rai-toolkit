@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Attack orchestrator — runs a catalog of attacks against a model and reports."""
+"""Attack orchestrator: runs a catalog of attacks against a model and reports."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _attack_display_name(call: Any) -> str:
         sev = getattr(template, "severity", None)
         suffix = f" sev={sev}" if sev is not None else ""
         return f"attack[{cat}/{aid}{suffix}]"
-    except Exception:  # pragma: no cover — display-name must never raise
+    except Exception:  # pragma: no cover, display-name must never raise
         return "attack"
 
 

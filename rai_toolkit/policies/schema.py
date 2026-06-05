@@ -76,7 +76,7 @@ class PolicyTrigger(BaseModel):
         description=(
             "Policy fires only when the user input contains any of these "
             "substrings (case-insensitive). Use to scope a policy to a "
-            "particular query population — e.g. only check emergency-"
+            "particular query population, e.g. only check emergency-"
             "escalation policies on queries that mention emergency-indicating "
             "symptoms."
         ),
@@ -164,7 +164,7 @@ class Policy(BaseModel):
 class PolicySet(BaseModel):
     """A collection of policies, typically loaded from one YAML file.
 
-    Represents a logical grouping — e.g. "healthcare policies" or
+    Represents a logical grouping, e.g. "healthcare policies" or
     "EU AI Act Article 15 policies."
     """
 

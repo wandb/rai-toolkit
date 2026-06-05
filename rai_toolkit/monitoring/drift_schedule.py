@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Continuous compliance / drift monitoring — planning helpers.
+"""Continuous compliance / drift monitoring: planning helpers.
 
 One-shot :class:`rai_toolkit.assessment.Assessor` runs produce a point-in-time
 artifact. Enterprise buyers typically want **periodic reassessment** when

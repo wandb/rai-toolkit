@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Score normalization — converts various scoring scales to a unified 0-1 range."""
+"""Score normalization: converts various scoring scales to a unified 0-1 range."""
 
 from __future__ import annotations
 

@@ -30,7 +30,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
 .title { font-size: 20px; font-weight: 700; margin-bottom: 4px; color: #1a1a1a; }
 .subtitle { font-size: 12px; color: #777; margin-bottom: 18px; }
 
-/* Verdict band — visually distinct so it can't be missed */
+/* Verdict band: visually distinct so it can't be missed */
 .verdict-band { background: #fff; border: 1px solid #e6e6e6; border-radius: 8px;
                 padding: 14px 16px; margin-bottom: 16px; }
 .verdict-band.fail { border-left: 4px solid #d84a4a; }
@@ -113,7 +113,7 @@ def _score_cell(label: str, percent: float, bar_cls: str, note: str) -> str:
 
     ``bar_cls`` selects the bar colour: empty string = green (pass),
     ``"fail"`` = red, ``"warn"`` = amber, ``"neutral"`` = gray (used for the
-    red-team resistance metric, whose own severity gate — not this rate — drives
+    red-team resistance metric, whose own severity gate (not this rate) drives
     the verdict).
     """
     width = max(0.0, min(100.0, percent * 100))
@@ -223,9 +223,9 @@ def render_assessment_html(result: AssessmentResult) -> str:
     finding_rows = ""
     for fnd in view.findings[:8]:
         trace_html = (
-            _link_or_text("trace", fnd.weave_trace_url) if fnd.weave_trace_url else "—"
+            _link_or_text("trace", fnd.weave_trace_url) if fnd.weave_trace_url else "-"
         )
-        policy_cell = f"<code>{escape(fnd.policy_name)}</code>" if fnd.policy_name else "—"
+        policy_cell = f"<code>{escape(fnd.policy_name)}</code>" if fnd.policy_name else "-"
         finding_rows += (
             f"<tr><td>{policy_cell}</td>"
             f"<td><code>{escape(fnd.scorer)}</code></td>"
@@ -282,16 +282,16 @@ def render_assessment_html(result: AssessmentResult) -> str:
         for vd in view.policy_violations[:8]:
             sev = str(vd.get("severity") or "?")
             name = vd.get("policy_name") or vd.get("name") or "policy"
-            framework = ", ".join(vd.get("frameworks") or []) or "—"
+            framework = ", ".join(vd.get("frameworks") or []) or "-"
             evidence = vd.get("evidence") or {}
             trace_url = (
                 evidence.get("weave_call_url") if isinstance(evidence, dict) else None
             )
-            trace_html = _link_or_text("trace", trace_url) if trace_url else "—"
+            trace_html = _link_or_text("trace", trace_url) if trace_url else "-"
             viol_rows += (
                 f'<tr><td><span class="sev {escape(sev)}">{escape(sev)}</span></td>'
                 f"<td><code>{escape(str(name))}</code></td>"
-                f"<td>{escape(str(vd.get('message') or '—'))}</td>"
+                f"<td>{escape(str(vd.get('message') or '-'))}</td>"
                 f"<td>{escape(framework)}</td>"
                 f"<td>{trace_html}</td></tr>"
             )
@@ -332,7 +332,7 @@ def render_assessment_html(result: AssessmentResult) -> str:
             trace_html = (
                 _link_or_text("trace", atk.weave_trace_url)
                 if atk.weave_trace_url
-                else "—"
+                else "-"
             )
             rt_rows += (
                 f"<tr><td><code>{escape(atk.attack_id)}</code></td>"
@@ -394,7 +394,7 @@ def _compact_result_view(result: Any) -> Any:
 
     The full ``AssessmentResult`` is preserved under ``result`` so the
     raw data is one click away. ``cost_estimate`` is stripped from that
-    dict before it lands in Weave — Weave already records actual per-op
+    dict before it lands in Weave. Weave already records actual per-op
     LLM spend natively, so the toolkit's static list-price estimate is
     duplicate (and conflicting) noise in the trace UI. Non-Weave consumers
     of ``AssessmentResult.to_dict()`` still see ``cost_estimate``; this
@@ -412,7 +412,7 @@ def _compact_result_view(result: Any) -> Any:
             "composite_score": result.overall_score,
             "result": result_dict,
         }
-    except Exception as e:  # pragma: no cover — postprocess must never break op
+    except Exception as e:  # pragma: no cover, postprocess must never break op
         logger.debug("compact result view skipped: %s", e)
         return result
 
@@ -437,7 +437,7 @@ def _assessment_call_display_name(call: Any) -> str:
             if preset
             else f"rai.assessment · {model_name}"
         )
-    except Exception:  # pragma: no cover — display name must never raise
+    except Exception:  # pragma: no cover, display name must never raise
         return "rai.assessment"
 
 

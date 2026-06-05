@@ -56,7 +56,7 @@ class NeMoGuardrailScorer(BaseScorer):
         context: str = "",
         **kwargs: Any,
     ) -> ScorerResult:
-        """Synchronous score — runs async check in event loop."""
+        """Synchronous score: runs async check in event loop."""
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -86,7 +86,7 @@ class NeMoGuardrailScorer(BaseScorer):
         context: str = "",
         **kwargs: Any,
     ) -> ScorerResult:
-        """Async score — checks input and output through NeMo rails."""
+        """Async score: checks input and output through NeMo rails."""
         issues: list[str] = []
         input_passed = True
         output_passed = True

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Review page — findings + remediation + approve/reject.
+"""Review page: findings + remediation + approve/reject.
 
 This is the artifact the RAI team signs off on. Shows the scoping rationale
 (why these tests ran), the headline verdict, per-framework findings, the
@@ -67,7 +67,7 @@ st.markdown("---")
 # Scoping ----------------------------------------------------------------
 
 if submission.scoping:
-    with st.expander("Scoping rationale — why these tests ran", expanded=False):
+    with st.expander("Scoping rationale: why these tests ran", expanded=False):
         st.markdown(submission.scoping.as_markdown())
 
 # Assessment result ---------------------------------------------------
@@ -146,7 +146,7 @@ def _row_label(row: dict) -> str:
 
 policy_violations = result.get("policy_violations", [])
 if policy_violations:
-    with st.expander("Policy violation evidence — where each finding came from", expanded=True):
+    with st.expander("Policy violation evidence: where each finding came from", expanded=True):
         for violation in policy_violations:
             evidence = violation.get("evidence") or {}
             row = evidence.get("dataset_row") or {}
@@ -197,7 +197,7 @@ if decision:
         st.markdown(f"- {line}")
 
     if decision.remediation:
-        st.subheader("Remediation — what to change before resubmission")
+        st.subheader("Remediation: what to change before resubmission")
         for item in decision.remediation:
             with st.container(border=True):
                 c1, c2 = st.columns([3, 1])
@@ -209,11 +209,11 @@ if decision:
                 if item.frameworks:
                     st.caption("Frameworks: " + ", ".join(item.frameworks))
     else:
-        st.success("No blocking findings — engine recommends approval.")
+        st.success("No blocking findings. Engine recommends approval.")
 
 # Framework coverage ----------------------------------------------------
 
-with st.expander("Framework coverage — evidence organized by reviewer-facing vocabulary", expanded=False):
+with st.expander("Framework coverage: evidence organized by reviewer-facing vocabulary", expanded=False):
     st.caption(view.framework_coverage_footnote)
     for f in view.frameworks:
         cols = st.columns([4, 2, 1])
@@ -231,7 +231,7 @@ with st.expander("Framework coverage — evidence organized by reviewer-facing v
 
 if view.findings:
     with st.expander(
-        f"Findings for review — total {view.findings_count}",
+        f"Findings for review: total {view.findings_count}",
         expanded=False,
     ):
         st.caption(
@@ -256,7 +256,7 @@ if view.findings:
 
 if view.coverage_gaps_count:
     with st.expander(
-        f"Un-assessed coverage gaps — total {view.coverage_gaps_count}",
+        f"Un-assessed coverage gaps: total {view.coverage_gaps_count}",
         expanded=False,
     ):
         st.caption(
@@ -277,7 +277,7 @@ sev_gate_passed = all(
 )
 if view.redteam_successful_attacks:
     with st.expander(
-        f"Successful red-team attacks — total {len(view.redteam_successful_attacks)}",
+        f"Successful red-team attacks: total {len(view.redteam_successful_attacks)}",
         expanded=not sev_gate_passed,
     ):
         if not sev_gate_passed:
@@ -314,7 +314,7 @@ if model_state_key not in st.session_state:
     try:
         st.session_state[model_state_key] = load_model_from_profile(submission.profile)
     except Exception as e:
-        st.error(f"Cannot start chat — model wouldn't load: {e}")
+        st.error(f"Cannot start chat. Model wouldn't load: {e}")
         st.session_state[model_state_key] = None
 
 probe_model = st.session_state.get(model_state_key)
@@ -336,13 +336,13 @@ for turn in st.session_state[chat_key]:
         st.markdown(turn["content"])
 
 # Wrap the chat input in a container so ``st.chat_input`` pins to the
-# bottom of *this section* instead of the page viewport — otherwise the
+# bottom of *this section* instead of the page viewport. Otherwise the
 # chatbox always renders below "Reviewer action" no matter where this
 # code lives, which breaks the natural reviewer flow (probe → decide).
 probe_box = st.container()
 if probe_model is not None:
     user_msg = probe_box.chat_input(
-        "Probe the model — try edge cases, jailbreaks, ambiguous queries…"
+        "Probe the model: try edge cases, jailbreaks, ambiguous queries…"
     )
     if user_msg:
         # Build a multi-turn context from prior turns. ``BaseModel.predict``
@@ -394,7 +394,7 @@ if probe_model is not None:
         st.session_state[chat_key].append({"role": "assistant", "content": output})
         st.rerun()
 
-    # Pin-as-finding controls — operate on the most recent assistant turn.
+    # Pin-as-finding controls: operate on the most recent assistant turn.
     history = st.session_state[chat_key]
     if len(history) >= 2 and history[-1]["role"] == "assistant":
         last_user = history[-2]["content"]
@@ -469,7 +469,7 @@ else:
     st.session_state["reviewer"] = reviewer
     notes = st.text_area(
         "Reviewer notes",
-        placeholder="Document any override of the auto-recommendation — the paper trail matters.",
+        placeholder="Document any override of the auto-recommendation. The paper trail matters.",
     )
     def _record_decision(decision: Decision) -> None:
         submit_decision(submission, decision, reviewer, notes)
@@ -519,7 +519,7 @@ else:
 with st.expander("State history", expanded=False):
     for h in submission.history:
         st.caption(
-            f"{h.at[:19]}  —  {h.from_status} → **{h.to_status}**  "
+            f"{h.at[:19]}  -  {h.from_status} → **{h.to_status}**  "
             f"({h.actor or 'system'})"
             + (f" · {h.note}" if h.note else "")
         )

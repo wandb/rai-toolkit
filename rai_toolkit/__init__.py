@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Responsible AI Toolkit — Production-grade RAI evaluation, compliance, and guardrails."""
+"""Responsible AI Toolkit: Production-grade RAI evaluation, compliance, and guardrails."""
 
 try:
     from dotenv import find_dotenv, load_dotenv

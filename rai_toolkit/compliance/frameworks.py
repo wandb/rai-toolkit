@@ -90,37 +90,37 @@ class ComplianceProfile:
         return [c for c in self.categories if c.severity == severity]
 
 
-# Industry presets — commonly selected risk categories per industry
+# Industry presets: commonly selected risk categories per industry
 INDUSTRY_PRESETS: dict[str, list[str]] = {
     "healthcare": [
-        "MIT-1.1",   # Discrimination/bias — critical for patient equity
+        "MIT-1.1",   # Discrimination/bias: critical for patient equity
         "MIT-1.2",   # Toxic content
-        "MIT-2.1",   # Privacy (PHI/PII) — HIPAA
-        "MIT-3.1",   # False/misleading info — clinical accuracy
-        "MIT-3.2",   # Info ecosystem — medical misinformation
-        "MIT-5.1",   # Overreliance — clinical decision support
-        "MIT-7.1",   # System failures — safety-critical
-        "MIT-7.2",   # Transparency — explainability for clinicians
+        "MIT-2.1",   # Privacy (PHI/PII): HIPAA
+        "MIT-3.1",   # False/misleading info: clinical accuracy
+        "MIT-3.2",   # Info ecosystem: medical misinformation
+        "MIT-5.1",   # Overreliance: clinical decision support
+        "MIT-7.1",   # System failures: safety-critical
+        "MIT-7.2",   # Transparency: explainability for clinicians
     ],
     "financial_services": [
-        "MIT-1.1",   # Discrimination — fair lending
-        "MIT-1.3",   # Unequal performance — across demographics
-        "MIT-2.1",   # Privacy — financial data
-        "MIT-2.2",   # Security — fraud prevention
-        "MIT-3.1",   # False info — financial advice accuracy
+        "MIT-1.1",   # Discrimination: fair lending
+        "MIT-1.3",   # Unequal performance: across demographics
+        "MIT-2.1",   # Privacy: financial data
+        "MIT-2.2",   # Security: fraud prevention
+        "MIT-3.1",   # False info: financial advice accuracy
         "MIT-4.2",   # Fraud/manipulation
-        "MIT-5.1",   # Overreliance — automated trading/decisions
-        "MIT-7.2",   # Transparency — regulatory explainability
+        "MIT-5.1",   # Overreliance: automated trading/decisions
+        "MIT-7.2",   # Transparency: regulatory explainability
     ],
     "government": [
-        "MIT-1.1",   # Discrimination — civil rights
+        "MIT-1.1",   # Discrimination: civil rights
         "MIT-1.3",   # Unequal performance
-        "MIT-2.1",   # Privacy — citizen data
-        "MIT-2.2",   # Security — national security
-        "MIT-3.1",   # False info — public trust
+        "MIT-2.1",   # Privacy: citizen data
+        "MIT-2.2",   # Security: national security
+        "MIT-3.1",   # False info: public trust
         "MIT-5.1",   # Overreliance
         "MIT-5.2",   # Loss of human agency
-        "MIT-7.2",   # Transparency — public accountability
+        "MIT-7.2",   # Transparency: public accountability
     ],
     "general": [
         "MIT-1.1",   # Discrimination/bias

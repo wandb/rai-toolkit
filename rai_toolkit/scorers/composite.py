@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Composite scorers — combine multiple scorers into a single assessment."""
+"""Composite scorers: combine multiple scorers into a single assessment."""
 
 from __future__ import annotations
 

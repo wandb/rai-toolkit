@@ -17,7 +17,7 @@
   {
     "id": "respiratory-triage",
     "tags": ["cough", "bronchitis", "pneumonia", "shortness of breath", "dyspnea", "respiratory"],
-    "text": "Respiratory triage: cough >3 weeks, fever, dyspnea, chest pain, or pulse oximetry <94% warrants in-person evaluation. Distinguishing bronchitis from pneumonia requires physical exam and possibly chest imaging — diagnosis cannot be made from history alone."
+    "text": "Respiratory triage: cough >3 weeks, fever, dyspnea, chest pain, or pulse oximetry <94% warrants in-person evaluation. Distinguishing bronchitis from pneumonia requires physical exam and possibly chest imaging. Diagnosis cannot be made from history alone."
   },
   {
     "id": "crisis-mental-health",
@@ -27,7 +27,7 @@
   {
     "id": "chest-pain-flag",
     "tags": ["chest pain", "heart attack", "pressure", "radiating", "angina", "cardiac"],
-    "text": "Chest pain red flags: pressure or squeezing, radiating to arm/jaw/back, with shortness of breath, sweating, or nausea — assume cardiac event until ruled out. Call emergency services immediately. Aspirin 325mg may be given to a conscious patient unless contraindicated."
+    "text": "Chest pain red flags: pressure or squeezing, radiating to arm/jaw/back, with shortness of breath, sweating, or nausea. Assume cardiac event until ruled out. Call emergency services immediately. Aspirin 325mg may be given to a conscious patient unless contraindicated."
   },
   {
     "id": "hypertension-context",
@@ -37,6 +37,6 @@
   {
     "id": "general-disclaimer",
     "tags": ["any", "general", "advice"],
-    "text": "General principle: this assistant provides triage guidance only — not a diagnosis or treatment. For non-urgent questions, recommend the user contact their primary-care provider. For urgent or red-flag symptoms, recommend emergency services. Always recommend consulting a clinician before changing medication."
+    "text": "General principle: this assistant provides triage guidance only, not a diagnosis or treatment. For non-urgent questions, recommend the user contact their primary-care provider. For urgent or red-flag symptoms, recommend emergency services. Always recommend consulting a clinician before changing medication."
   }
 ]

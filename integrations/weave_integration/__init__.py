@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""W&B Weave integration — connects the rai_toolkit toolkit to Weave.
+"""W&B Weave integration: connects the rai_toolkit toolkit to Weave.
 
 Provides adapters for: tracing, models, scorers, and evaluations. LLM
-cost tracking is intentionally not in here — Weave records per-op token
+cost tracking is intentionally not in here. Weave records per-op token
 spend automatically when ``weave.init`` runs.
 """
 
@@ -22,7 +22,7 @@ from integrations.weave_integration.feedback import (
 # Importing ``views`` registers the assessment HTML renderer, the
 # ``weave.set_view`` adapter, and the per-op extensions (call_display_name,
 # postprocess_output) with ``rai_toolkit._tracing``. Side-effect import
-# is intentional — keeping it here means the toolkit never has to know
+# is intentional. Keeping it here means the toolkit never has to know
 # the integration's internals.
 from integrations.weave_integration import views as _views  # noqa: F401
 

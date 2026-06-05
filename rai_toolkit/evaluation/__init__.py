@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Evaluation pipeline — compliance-aware evaluation orchestration."""
+"""Evaluation pipeline: compliance-aware evaluation orchestration."""
 
 from rai_toolkit.evaluation.pipeline import RAIEvaluationPipeline, EvaluationResults
 from rai_toolkit.evaluation.datasets import DatasetLoader

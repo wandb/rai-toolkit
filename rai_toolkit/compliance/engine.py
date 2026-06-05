@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Compliance Mapping Engine — the central orchestrator.
+"""Compliance Mapping Engine: the central orchestrator.
 
 Maps compliance frameworks to risk categories to scorers.
 This is the primary interface for building compliance-aware RAI evaluations.

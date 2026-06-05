@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Scorer framework — base classes and built-in scorers for RAI evaluation."""
+"""Scorer framework: base classes and built-in scorers for RAI evaluation."""
 
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
 from rai_toolkit.scorers.llm_judges import (

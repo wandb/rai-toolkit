@@ -5,9 +5,9 @@
 """OpenAI-compatible model adapter.
 
 Lets the RAI team point the toolkit at any service that speaks the OpenAI
-chat-completions protocol — the public OpenAI API, Azure, vLLM, Ollama,
+chat-completions protocol: the public OpenAI API, Azure, vLLM, Ollama,
 LiteLLM proxies, internal corporate proxies, anything. The reviewer
-doesn't have to clone the app team's repo or load a Python class — they
+doesn't have to clone the app team's repo or load a Python class. They
 paste a URL, a model name, and an API key.
 
 Use ``rai_toolkit.models.openai_compatible:from_args`` to build one
@@ -38,8 +38,8 @@ class OpenAICompatibleModel(BaseModel):
             the public OpenAI API.
         api_key: API key. Falls back to ``OPENAI_API_KEY`` env var if
             unset. Many local stacks accept any non-empty string.
-        system_prompt: Optional system message prepended to every call —
-            this is how a triage-assistant or RAG-style app wires its
+        system_prompt: Optional system message prepended to every call.
+            This is how a triage-assistant or RAG-style app wires its
             system instructions while still being a generic adapter.
         temperature: Default 0 for reproducibility. Override per-call via
             ``predict(..., temperature=...)``.

@@ -28,7 +28,7 @@ from pathlib import Path
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="rai",
-        description="Responsible AI toolkit — compliance, evaluation, guardrails.",
+        description="Responsible AI toolkit: compliance, evaluation, guardrails.",
     )
     parser.add_argument(
         "--log-level",
@@ -229,7 +229,7 @@ def _cmd_datasets_demo(args: argparse.Namespace) -> int:
     else:
         bundles = DEMO_EXAMPLE_BUNDLES
     for preset, slugs in sorted(bundles.items()):
-        print(f"{preset:22s}  {', '.join(slugs) if slugs else '—'}")
+        print(f"{preset:22s}  {', '.join(slugs) if slugs else '-'}")
     return 0
 
 
@@ -293,8 +293,8 @@ def _load_model(model_ref: str):
     """Import a BaseModel subclass from a dotted path.
 
     Supports two forms:
-      - ``pkg.module.ClassName`` — imports and instantiates with no args.
-      - ``pkg.module:factory`` — imports a factory callable and calls it.
+      - ``pkg.module.ClassName``: imports and instantiates with no args.
+      - ``pkg.module:factory``: imports a factory callable and calls it.
     """
     if ":" in model_ref:
         module_path, attr = model_ref.split(":", 1)

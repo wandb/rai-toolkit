@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Assessment workflow — one-call entry point that produces an evidence-based
+"""Assessment workflow: one-call entry point that produces an evidence-based
 compliance assessment.
 
 An assessment run combines:
@@ -13,7 +13,7 @@ An assessment run combines:
 
 The result is a single ``AssessmentResult`` object suitable for rendering as
 a CLI summary, JSON export, or signed PDF report. The toolkit deliberately
-avoids the binary "certified / not certified" framing — the result is
+avoids the binary "certified / not certified" framing. The result is
 evidence for a human reviewer's decision, not a stamp.
 
 Example::

@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""ApplicationProfile — the intake record for an app requesting RAI review.
+"""ApplicationProfile: the intake record for an app requesting RAI review.
 
 This is the *input* the RAI team receives from an app team. Everything that
 scopes the assessment run (which datasets, which scorers, which red-team
-severity cap, which policies) is derived from this profile — see
+severity cap, which policies) is derived from this profile. See
 ``rai_toolkit.workflow.scoping``.
 """
 
@@ -91,7 +91,7 @@ class ApplicationProfile:
     risk_tier: RiskTier = RiskTier.MEDIUM
     data_types: list[str] = field(default_factory=list)
     capabilities: list[str] = field(default_factory=list)
-    model_ref: str = ""        # e.g. "my_pkg:build_model" — used when adapter == "python_class"
+    model_ref: str = ""        # e.g. "my_pkg:build_model", used when adapter == "python_class"
     model_adapter: str = "python_class"  # "python_class" | "openai_compatible"
     model_adapter_args: dict[str, Any] = field(default_factory=dict)
     dataset_overrides: list[str] = field(default_factory=list)

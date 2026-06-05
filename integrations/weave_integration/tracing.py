@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Weave tracing integration — @weave.op wrapping and initialization."""
+"""Weave tracing integration: @weave.op wrapping and initialization."""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def traced(
 
     Args:
         name: Custom op name in Weave UI (e.g. ``rai.assessment``).
-        kind: Operation kind — Weave uses this to render an icon/color
+        kind: Operation kind, Weave uses this to render an icon/color
             in the trace tree. Valid values include ``"llm"``, ``"tool"``,
             ``"agent"``, ``"scorer"``, ``"search"``.
         call_display_name: Optional per-call label. Either a string, or a

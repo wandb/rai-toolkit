@@ -6,7 +6,7 @@
 
 When a reviewer pins a chat turn as a ``ManualFinding`` or signs off on a
 submission, those actions belong on the *same* Weave trace that produced
-the assessment — that's what makes the audit trail complete:
+the assessment. That's what makes the audit trail complete:
 auto-eval traces + reviewer judgments live side by side.
 
 Also exposes :func:`probe_thread`, a no-op-safe context manager for
@@ -35,7 +35,7 @@ def probe_thread(thread_id: str | None) -> Iterator[None]:
     ``model.predict(...)`` is its own top-level Weave trace. Calling
     ``predict`` inside this context manager tags it with a stable
     ``thread_id``, and Weave's UI renders the turns as one conversation
-    thread (Threads tab) — which is what reviewers actually want when
+    thread (Threads tab), which is what reviewers actually want when
     probing the model.
 
     No-op when Weave isn't initialized or ``thread_id`` is falsy, so
@@ -58,7 +58,7 @@ def _get_call(call_id: str) -> Any | None:
     """Look up a Weave ``Call`` by ID. Returns ``None`` on any failure.
 
     We're attaching feedback *after* the cert op has finished, so
-    ``weave.require_current_call`` won't help — pull the live client
+    ``weave.require_current_call`` won't help. Pull the live client
     directly and call ``get_call(id)`` on it.
     """
     if not call_id:
@@ -91,7 +91,7 @@ def attach_manual_finding(
       * a ``rai.manual_finding`` payload with full details, and
       * a severity-keyed reaction (ℹ️ info, 🟢 low, 🟡 medium, 🟠 high,
         🔴 critical) so the Weave call list surfaces pinned findings at
-        a glance — same affordance the reviewer approve/reject reactions
+        a glance. Same affordance the reviewer approve/reject reactions
         give for the final decision.
 
     Returns the feedback ID for the structured payload (the reaction

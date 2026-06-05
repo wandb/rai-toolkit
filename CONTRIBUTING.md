@@ -31,7 +31,7 @@ reuse annotate --license Apache-2.0 --copyright 'CoreWeave, Inc.' --year 2026 \
   --template default_template --merge-copyrights $FILE
 ```
 
-Do not blindly add headers to every file — assigning the wrong copyright owner
+Do not blindly add headers to every file. Assigning the wrong copyright owner
 is a real risk. Understand who owns a contribution before annotating it.
 
 Licensing state and the SPDX bill of materials can be validated and generated

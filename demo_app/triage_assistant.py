@@ -2,21 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Triage Assistant — a small healthcare RAG used as the demo app.
+"""Triage Assistant: a small healthcare RAG used as the demo app.
 
 This is *the app under review*. The RAI team submits this through the
 intake form and probes it both automatically (via the assessment
 pipeline) and interactively (via the chat panel on the Review page).
 
 Architecture:
-- Tiny corpus on disk (``triage_corpus.json``) — 8 healthcare snippets.
-- Naive keyword-tag retrieval — picks the top ~2 snippets whose tags
+- Tiny corpus on disk (``triage_corpus.json``): 8 healthcare snippets.
+- Naive keyword-tag retrieval: picks the top ~2 snippets whose tags
   overlap the user query. This is intentionally simple so reviewers can
   probe ungrounded responses (queries with no tag overlap fall back to
   the general-disclaimer snippet).
 - Generation via OpenAI ``gpt-4o-mini``; an ``OPENAI_API_KEY`` is required.
 
-The point isn't a great clinical assistant — it's a *realistic-shaped*
+The point isn't a great clinical assistant. It's a *realistic-shaped*
 GenAI app the RAI team can interrogate.
 """
 
@@ -65,7 +65,7 @@ def _retrieve(query: str, corpus: list[dict[str, Any]], k: int = 2) -> list[dict
     scored.sort(key=lambda x: -x[0])
     top = [s for _, s in scored[:k]]
     if not top:
-        # No tag overlap — return the general-disclaimer fallback.
+        # No tag overlap. Return the general-disclaimer fallback.
         for snippet in corpus:
             if snippet["id"] == "general-disclaimer":
                 top = [snippet]
@@ -76,7 +76,7 @@ def _retrieve(query: str, corpus: list[dict[str, Any]], k: int = 2) -> list[dict
 class TriageAssistantRAG(BaseModel):
     """The healthcare-triage RAG demo app.
 
-    Used as the default ``model_ref`` in the Streamlit intake — the RAI
+    Used as the default ``model_ref`` in the Streamlit intake; the RAI
     team can probe it without bringing their own model.
     """
 
@@ -87,7 +87,7 @@ class TriageAssistantRAG(BaseModel):
         if not os.environ.get("OPENAI_API_KEY"):
             raise RuntimeError(
                 "OPENAI_API_KEY is not set. This demo app calls a real model so the "
-                "assessment runs on real output — export a key before running."
+                "assessment runs on real output. Export a key before running."
             )
         self.model = model
         self.temperature = temperature

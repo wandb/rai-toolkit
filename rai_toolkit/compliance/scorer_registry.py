@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Scorer registry — maps risk categories to scorer classes.
+"""Scorer registry: maps risk categories to scorer classes.
 
 This is the central mapping table. When the compliance engine resolves a profile,
 it looks up each risk category here to find which scorers to instantiate.

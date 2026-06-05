@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""RAI Evaluation Pipeline — compliance-aware evaluation orchestration."""
+"""RAI Evaluation Pipeline: compliance-aware evaluation orchestration."""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ def _evaluate_item_display_name(call: Any) -> str:
             return f"evaluate_item[{position}]"
         if text:
             return f'evaluate_item "{text}"'
-    except Exception:  # pragma: no cover — display-name must never raise
+    except Exception:  # pragma: no cover, display-name must never raise
         pass
     return "evaluate_item"
 
@@ -319,7 +319,7 @@ class RAIEvaluationPipeline:
 
         Un-assessed results (``ScorerResult.assessed == False``) are tracked
         separately so the report can show coverage gaps explicitly. They do
-        not contribute to mean/min/max/pass_rate — averaging in synthetic
+        not contribute to mean/min/max/pass_rate; averaging in synthetic
         defaults is exactly the credibility leak we are avoiding.
         """
         category_scores: dict[str, list[float]] = {}
@@ -357,7 +357,7 @@ class RAIEvaluationPipeline:
     def _compute_overall_score(self, summary: dict[str, dict[str, Any]]) -> float:
         """Compute weighted overall score from category summaries.
 
-        Skips categories with no assessed items — averaging ``None`` (or a
+        Skips categories with no assessed items; averaging ``None`` (or a
         synthetic 0) into the overall would misrepresent coverage.
         """
         if not summary:

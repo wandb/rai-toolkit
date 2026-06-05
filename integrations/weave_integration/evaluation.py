@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Weave evaluation runner — runs rai_toolkit evaluations via weave.Evaluation."""
+"""Weave evaluation runner: runs rai_toolkit evaluations via weave.Evaluation."""
 
 from __future__ import annotations
 
@@ -131,7 +131,7 @@ class WeaveEvaluationRunner:
         """Return per-row ``EvaluationResults`` from Weave plus the summary dict.
 
         Calls ``evaluate()`` (not ``get_eval_results`` directly) so the run
-        registers in the Weave UI's Evals tab — the tab filters on op_name
+        registers in the Weave UI's Evals tab. The tab filters on op_name
         ``Evaluation.evaluate`` and only that method carries it. Per-row
         results are captured by transparently wrapping
         ``evaluation.get_eval_results`` on the instance; ``evaluate`` calls

@@ -11,7 +11,7 @@ protocols so future eval harnesses (Weave traces, Inspect, custom simulators)
 can plug in without rewriting the assessment pipeline.
 
 Full orchestration (tool mocks, rollouts, parallel agents) is **not**
-implemented here — only types and documentation of the intended seam.
+implemented here, only types and documentation of the intended seam.
 """
 
 from __future__ import annotations

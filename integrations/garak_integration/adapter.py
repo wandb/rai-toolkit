@@ -12,19 +12,19 @@ Garak is heavyweight (its own probe registry, harness, generator
 abstraction, transient config object) so the adapter is intentionally
 narrow:
 
-* :class:`RAIGenerator` — wraps a toolkit :class:`BaseModel`.
+* :class:`RAIGenerator`: wraps a toolkit :class:`BaseModel`.
   Garak probes call ``generator.generate(prompt)`` synchronously, so the
   generator captures the parent event loop at construction time and uses
   :func:`asyncio.run_coroutine_threadsafe` to dispatch ``model.predict``
   back onto that loop. This is what makes ``rai.model.predict`` spans
-  nest under each ``rai.redteam.garak.attack`` span in Weave — without
+  nest under each ``rai.redteam.garak.attack`` span in Weave. Without
   it, the threaded ``asyncio.run`` boundary loses the parent call
   context and the model calls show up as orphans.
 
-* :class:`GarakProbeSpec` — a recipe naming a probe + the toolkit-side
+* :class:`GarakProbeSpec`: a recipe naming a probe + the toolkit-side
   category/severity it maps to.
 
-* :func:`run_garak_probes` — execute a list of probes and return a
+* :func:`run_garak_probes`: execute a list of probes and return a
   :class:`RedTeamReport`. Probes are configured with the few attributes
   Garak normally pulls from its harness-time config
   (``parallel_attempts``, ``generations``, ``_config.transient.reportfile``);
@@ -58,7 +58,7 @@ try:
     from garak.generators.base import Generator as _GarakGenerator
 
     GARAK_INSTALLED = True
-except ImportError:  # pragma: no cover — depends on optional install
+except ImportError:  # pragma: no cover, depends on optional install
     GARAK_INSTALLED = False
     _GarakGenerator = object  # type: ignore[assignment, misc]
     _garak_config = None  # type: ignore[assignment]
@@ -129,7 +129,7 @@ class RAIGenerator(_GarakGenerator):  # type: ignore[misc, valid-type]
         # executes on a worker thread that inherited the parent
         # ``rai.redteam.garak.attack`` call via contextvars. Spinning up
         # a fresh event loop here with ``asyncio.run`` preserves those
-        # contextvars on the new Task — that's what makes
+        # contextvars on the new Task. That's what makes
         # ``model.predict`` nest under the attack span in Weave.
         # Hopping back to the main loop via ``run_coroutine_threadsafe``
         # would NOT preserve them: the Task gets created on the
@@ -175,10 +175,10 @@ def default_garak_probes() -> list[GarakProbeSpec]:
     """Curated Garak probes that complement the in-tree catalog.
 
     Picked to cover ground the in-tree templates don't:
-      * **DAN** — community jailbreak family.
-      * **PromptInject** — Liu et al. prompt-injection benchmark.
-      * **Continuation** — toxic-completion elicitation.
-      * **Encoding** — base64-encoded unsafe requests.
+      * **DAN**: community jailbreak family.
+      * **PromptInject**: Liu et al. prompt-injection benchmark.
+      * **Continuation**: toxic-completion elicitation.
+      * **Encoding**: base64-encoded unsafe requests.
     """
     return [
         GarakProbeSpec(
@@ -218,7 +218,7 @@ def _instantiate_probe(probe_path: str, prompt_cap: int) -> Any:
     Sets the few attributes Garak's harness usually sets and slices the
     probe's prompt list down to ``prompt_cap`` so each ``garak[...]``
     span runs in a few seconds instead of a few minutes. The probes
-    contain 1–64+ canned prompts; the demo only needs enough to show
+    contain 1-64+ canned prompts; the demo only needs enough to show
     the attack flowing through.
     """
     module_path, _, class_name = probe_path.rpartition(".")
@@ -236,7 +236,7 @@ def _instantiate_probe(probe_path: str, prompt_cap: int) -> Any:
     # Cap the prompt list directly so probes with hardcoded prompt sets
     # (HijackHateHumans, encoding, continuation) also stay short. The
     # attribute is documented as part of every Probe's public API.
-    # Some probes (encoding) ship ``prompts`` as a tuple — coerce to list
+    # Some probes (encoding) ship ``prompts`` as a tuple, coerce to list
     # so the slice works regardless of the underlying container type.
     prompts = getattr(probe, "prompts", None)
     if isinstance(prompts, (list, tuple)) and len(prompts) > prompt_cap:
@@ -256,7 +256,7 @@ def _attempt_succeeded(outputs: list[str]) -> bool:
 
     Garak ships detectors per-probe but they need their own model/config
     bootstrap; for the Weave demo we just check the captured outputs
-    against the in-tree refusal patterns — same heuristic the built-in
+    against the in-tree refusal patterns. Same heuristic the built-in
     ``AttackTemplate.evaluate`` uses, so PyRIT, Garak, and the in-tree
     catalog agree on what 'succeeded' means.
     """

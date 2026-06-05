@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""Weave scorer adapter — bridges rai_toolkit scorers to Weave scorers."""
+"""Weave scorer adapter: bridges rai_toolkit scorers to Weave scorers."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def _to_plain(obj: Any) -> Any:
     ``dict``. Leaves scalar types alone.
 
     Required because ``dataclasses.asdict`` clones list/tuple values via
-    ``type(obj)(generator)`` — a ``WeaveList`` constructor requires a
+    ``type(obj)(generator)``, and a ``WeaveList`` constructor requires a
     ``server`` kwarg and raises ``TypeError`` otherwise. Stripping the
     subclass before values enter ``ScorerResult.details`` keeps the
     serializer happy without coupling rai_toolkit core to Weave types.
@@ -123,7 +123,7 @@ class WeaveRAIScorer(weave.Scorer):
         Accepts both dict output (from WeaveModel) and plain string. If the
         model exposed ``retrieved_context`` in its response metadata (i.e. the
         text it actually grounded on), prefer that over the dataset's
-        ``context`` snippet — otherwise grounding scorers penalize models for
+        ``context`` snippet. Otherwise grounding scorers penalize models for
         responses grounded in retrievals the scorer never saw.
 
         ``rubrics`` is declared explicitly so Weave's column mapping forwards
@@ -191,7 +191,7 @@ def _wrapped_scorer_display_name(call: Any) -> str:
     and they are impossible to tell apart at a glance.
 
     Note: dynamically subclassing ``WeaveRAIScorer`` does *not* change the
-    op_name — Weave captures op_name at decoration time on the parent
+    op_name. Weave captures op_name at decoration time on the parent
     class. Per-call display name is the supported override.
     """
     try:
@@ -215,7 +215,7 @@ def _wrapped_scorer_display_name(call: Any) -> str:
         if name:
             return str(name)
         return type(wrapper).__name__
-    except Exception:  # pragma: no cover — display name must never raise
+    except Exception:  # pragma: no cover, display name must never raise
         return "scorer"
 
 
@@ -318,7 +318,7 @@ def _coerce_output_to_str(output: Any) -> str:
     ``WeaveModel.predict`` returns ``{"output": "...", "model": ..., ...}``,
     which Weave forwards verbatim as the ``output=`` arg to scorers. Most
     built-in Weave scorers (toxicity, fluency, OpenAI moderation) expect a
-    plain ``str`` and pass it directly to a tokenizer or API call — handing
+    plain ``str`` and pass it directly to a tokenizer or API call. Handing
     them a dict raises a type/validation error.
     """
     if output is None:

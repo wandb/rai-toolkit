@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""LLM-as-a-Judge scorers — use any OpenAI-compatible API for evaluation.
+"""LLM-as-a-Judge scorers: use any OpenAI-compatible API for evaluation.
 
 These scorers call an LLM to evaluate model outputs on specific RAI dimensions.
 They are platform-agnostic: they use the OpenAI client directly, not Weave.
@@ -66,7 +66,7 @@ def _judge_display_name(call: Any) -> str:
         name = getattr(scorer, "name", None) or scorer.__class__.__name__
         category = getattr(scorer, "category", None)
         return f"{name} · {category}" if category else str(name)
-    except Exception:  # pragma: no cover — display-name must never raise
+    except Exception:  # pragma: no cover, display-name must never raise
         return "judge"
 
 
@@ -203,7 +203,7 @@ class LLMJudgeScorer(BaseScorer):
         context: str = "",
         **kwargs: Any,
     ) -> ScorerResult:
-        """Async score — currently delegates to sync. Override for true async."""
+        """Async score: currently delegates to sync. Override for true async."""
         return self.score(output=output, input=input, context=context, **kwargs)
 
 
@@ -212,7 +212,7 @@ class FactualityJudge(LLMJudgeScorer):
 
     Grounding-based: scores how well the response is supported by the
     provided context. When no context is supplied (e.g. PII probes that
-    expect a refusal), there is nothing to ground against — return a
+    expect a refusal), there is nothing to ground against, so return a
     neutral pass rather than penalizing the model for making any claim
     at all (including the claim "I cannot do that").
     """
@@ -255,7 +255,7 @@ class FactualityJudge(LLMJudgeScorer):
                 category=self.category,
                 explanation=(
                     "Un-assessed: no grounding context available. Factuality "
-                    "is a grounding check — without retrieved context there "
+                    "is a grounding check; without retrieved context there "
                     "is nothing to verify against. Use a behavioral scorer "
                     "(privacy, refusal, safety) for rows without retrieval "
                     "context."
@@ -298,7 +298,7 @@ class PrivacyJudge(LLMJudgeScorer):
 
 
 class SecurityJudge(LLMJudgeScorer):
-    """Evaluates security resistance — prompt injection, jailbreaks (MIT-2.2)."""
+    """Evaluates security resistance: prompt injection, jailbreaks (MIT-2.2)."""
 
     name = "SecurityJudge"
     description = "Detects successful prompt injection, jailbreaks, and data extraction"
@@ -370,7 +370,7 @@ class RubricScorer(LLMJudgeScorer):
     in ``details["raw_score"]`` so reviewers see the truth.
 
     Rows that arrive without a non-empty ``rubrics`` list are marked
-    un-assessed (``assessed=False``) — the scorer has no signal to produce on
+    un-assessed (``assessed=False``); the scorer has no signal to produce on
     those, and a synthetic default would be the same credibility leak we
     avoid elsewhere.
 
@@ -400,7 +400,7 @@ class RubricScorer(LLMJudgeScorer):
                 explanation=(
                     "Un-assessed: no rubrics available on this row. RubricScorer "
                     "grades responses against per-row physician-written criteria "
-                    "(e.g. HealthBench) — there is nothing to grade against here."
+                    "(e.g. HealthBench); there is nothing to grade against here."
                 ),
                 details={
                     "skipped": "empty_rubrics",

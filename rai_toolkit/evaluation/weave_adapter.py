@@ -110,7 +110,7 @@ def _raw_score_to_scorer_result(scorer_name: str, raw: Any) -> ScorerResult:
             assessed=bool(raw.get("assessed", True)),
         )
 
-    # Shape 2: Weave's WeaveScorerResult — ``{passed, metadata}``. The
+    # Shape 2: Weave's WeaveScorerResult, ``{passed, metadata}``. The
     # binary scorers (toxicity, bias, hallucination, coherence, fluency)
     # all return this shape; the per-category numeric metadata is too
     # scorer-specific to map to a single 0-1 number, so use the binary
@@ -125,7 +125,7 @@ def _raw_score_to_scorer_result(scorer_name: str, raw: Any) -> ScorerResult:
             details=dict(raw.get("metadata") or {}),
         )
 
-    # Shape 3: OpenAIModerationScorer — ``{passed, categories}``.
+    # Shape 3: OpenAIModerationScorer, ``{passed, categories}``.
     if "passed" in raw and "categories" in raw and "score" not in raw:
         passed = bool(raw["passed"])
         flagged_cats = list((raw.get("categories") or {}).keys())
@@ -142,7 +142,7 @@ def _raw_score_to_scorer_result(scorer_name: str, raw: Any) -> ScorerResult:
         )
 
     # Shape 4: legacy numeric-keyed dicts. Only honor these when the value
-    # is already in [0,1] — clamping silently turned arbitrary numbers into
+    # is already in [0,1]; clamping silently turned arbitrary numbers into
     # confident-looking scores.
     for key in ("value", "score", "accuracy", "match"):
         if key in raw and isinstance(raw[key], (int, float)):
