@@ -517,8 +517,9 @@ two third-party red-team integrations (PyRIT, Garak), see also
 
 ## Third-party software & citations
 
-Optional integrations are listed in [`NOTICE`](NOTICE) along with their
-licenses and citation requirements. Notably:
+Optional integrations and bundled benchmark datasets are listed in
+[`NOTICE`](NOTICE) along with their licenses and citation requirements.
+Notably:
 
 - **PyRIT** (enabled via the `[pyrit]` extra, see [Install](#install)):
   the `integrations/pyrit_integration/adapter.py` module subclasses and runs
@@ -531,6 +532,13 @@ licenses and citation requirements. Notably:
   NVIDIA/garak probes into the toolkit's `RedTeamReport` shape. If you
   publish work that uses this adapter, cite the Garak paper listed in
   [`NOTICE`](NOTICE).
+- **HealthBench** (loaded via the `healthbench-triage` example slug) —
+  the `_healthbench_triage_loader` streams
+  [openai/healthbench](https://huggingface.co/datasets/openai/healthbench)
+  (MIT) from HuggingFace at runtime (no copy is bundled). If you publish
+  work that uses HealthBench, cite the HealthBench paper
+  ([Arora et al., 2025, arXiv:2505.08775](https://arxiv.org/abs/2505.08775));
+  the BibTeX block is in [`NOTICE`](NOTICE).
 
 ## Framework references
 
