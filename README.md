@@ -474,6 +474,47 @@ PRs welcome. The highest-impact contributions right now:
 
 Apache 2.0. See [`LICENSE`](LICENSE).
 
+## Dependency licenses
+
+All runtime and optional dependencies use permissive licenses
+(Apache-2.0, MIT, BSD-3-Clause) that are compatible with this project's
+own Apache-2.0 license. None are bundled in the core package; optional
+dependencies are pulled in only by their respective extras. This table
+documents the licenses declared by each dependency in `pyproject.toml`.
+
+### Core dependencies (always installed)
+
+| Package | Min version | License |
+|---|---|---|
+| [openai](https://github.com/openai/openai-python) | 2.2.0 | Apache-2.0 |
+| [pydantic](https://github.com/pydantic/pydantic) | 2.6.0 | MIT |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | 1.0.1 | BSD-3-Clause |
+| [pyyaml](https://github.com/yaml/pyyaml) | 6.0.1 | MIT |
+
+### Optional dependencies (by extra)
+
+| Package | Min version | License | Extra(s) |
+|---|---|---|---|
+| [weave](https://github.com/wandb/weave) | 0.52.40 | Apache-2.0 | `weave`, `scorers` |
+| [wandb](https://github.com/wandb/wandb) | 0.27.0 | MIT | `weave`, `scorers` |
+| [gql](https://github.com/graphql-python/gql) | 4.0.0 | MIT | `weave` |
+| [nemoguardrails](https://github.com/NVIDIA/NeMo-Guardrails) | 0.21.0 | Apache-2.0 | `nemo` |
+| [pyrit](https://github.com/microsoft/PyRIT) | 0.13.0 | MIT | `pyrit` |
+| [garak](https://github.com/NVIDIA/garak) | 0.15.0 | Apache-2.0 | `garak` |
+| [torchvision](https://github.com/pytorch/vision) | 0.20.0 | BSD-3-Clause | `garak` |
+| [streamlit](https://github.com/streamlit/streamlit) | 1.57.0 | Apache-2.0 | `demo` |
+| [plotly](https://github.com/plotly/plotly.py) | 6.0.0 | MIT | `demo` |
+| [pandas](https://github.com/pandas-dev/pandas) | 2.1.0 | BSD-3-Clause | `demo` |
+| [datasets](https://github.com/huggingface/datasets) | 3.0.0 (<4.0) | Apache-2.0 | `datasets` |
+| [pytest](https://github.com/pytest-dev/pytest) | 8.3.0 | MIT | `dev` |
+| [pytest-asyncio](https://github.com/pytest-dev/pytest-asyncio) | 0.24.0 | Apache-2.0 | `dev` |
+
+License identifiers above are SPDX expressions as declared by each
+upstream project. They are documented here for convenience and are not a
+substitute for reviewing each dependency's own license terms. For the
+two third-party red-team integrations (PyRIT, Garak), see also
+[`NOTICE`](NOTICE) for citation requirements.
+
 ## Third-party software & citations
 
 Optional integrations are listed in [`NOTICE`](NOTICE) along with their
