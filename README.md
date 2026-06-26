@@ -6,6 +6,7 @@
 > reviewer-led probing. Produce a repeatable approval record that links
 > findings back to the evidence that produced them.
 
+Prefer to watch first? See the full review gate in a short walkthrough video: https://www.youtube.com/watch?v=-dGIUA_LLik
 ```bash
 git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
