@@ -21,6 +21,10 @@
 !/integrations/
 !/integrations/**
 
+# Test sources are published with the repository but excluded from wheels.
+!/tests/
+!/tests/**
+
 # Reference reviewer UI and example apps (see README).
 !/demo/
 !/demo/**
