@@ -270,6 +270,61 @@ class FactualityJudge(LLMJudgeScorer):
         return super().score(output=output, input=input, context=context, **kwargs)
 
 
+_QUOTE_EQUIVALENTS = {
+    "‘": "'",
+    "’": "'",
+    "“": '"',
+    "”": '"',
+}
+
+
+def _normalized_chars(text: str) -> tuple[str, list[int]]:
+    """Normalize for matching: collapse whitespace runs, unify quote characters.
+
+    Returns the normalized text together with a map from each normalized
+    character back to its index in the original text, so a match found in
+    normalized space can be sliced verbatim from the original.
+    """
+
+    chars: list[str] = []
+    positions: list[int] = []
+    space_pending = False
+    for index, char in enumerate(text):
+        if char.isspace():
+            # Leading whitespace is dropped; interior runs collapse to one space
+            space_pending = bool(chars)
+            continue
+        if space_pending:
+            chars.append(" ")
+            positions.append(index)
+            space_pending = False
+        chars.append(_QUOTE_EQUIVALENTS.get(char, char))
+        positions.append(index)
+    return "".join(chars), positions
+
+
+def _find_verbatim_span(span: str, row_text: str) -> str | None:
+    """Locate ``span`` in ``row_text``, tolerating judge-side normalization.
+
+    Judge models often collapse whitespace or emit curly quotes, which must not
+    discard otherwise-legitimate evidence. The match is searched in normalized
+    space, but the returned span is always sliced from ``row_text`` itself, so
+    stored evidence stays verbatim row text rather than the judge's version.
+    """
+
+    if span in row_text:
+        return span
+    normalized_span, _ = _normalized_chars(span)
+    if not normalized_span:
+        return None
+    normalized_row, positions = _normalized_chars(row_text)
+    start = normalized_row.find(normalized_span)
+    if start == -1:
+        return None
+    end = start + len(normalized_span) - 1
+    return row_text[positions[start] : positions[end] + 1]
+
+
 def _verified_evidence_spans(
     raw_spans: Any,
     *,
@@ -290,14 +345,13 @@ def _verified_evidence_spans(
             continue
         response_span = response_span.strip()
         context_span = context_span.strip()
-        if (
-            response_span
-            and context_span
-            and response_span in output
-            and context_span in context
-        ):
+        if not response_span or not context_span:
+            continue
+        verbatim_response = _find_verbatim_span(response_span, output)
+        verbatim_context = _find_verbatim_span(context_span, context)
+        if verbatim_response is not None and verbatim_context is not None:
             verified.append(
-                {"response_span": response_span, "context_span": context_span}
+                {"response_span": verbatim_response, "context_span": verbatim_context}
             )
     return verified
 

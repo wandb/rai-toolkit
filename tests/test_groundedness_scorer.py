@@ -53,6 +53,63 @@ def test_supported_response_carries_verified_spans() -> None:
     ]
 
 
+def test_judge_normalized_whitespace_does_not_discard_spans() -> None:
+    context = "Revenue grew by 12%\n    year over year."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "Supported.",
+            "supporting_spans": [
+                {
+                    "response_span": "Revenue grew 12%.",
+                    # Judge collapsed the newline and indentation to one space
+                    "context_span": "Revenue grew by 12% year over year.",
+                }
+            ],
+            "contradicting_spans": [],
+        }
+    )
+
+    result = scorer.score("Revenue grew 12%.", context=context)
+
+    # The stored span is verbatim row text, not the judge's normalized version
+    assert result.details["supporting_spans"] == [
+        {
+            "response_span": "Revenue grew 12%.",
+            "context_span": "Revenue grew by 12%\n    year over year.",
+        }
+    ]
+    assert result.details["discarded_evidence_spans"] == 0
+
+
+def test_judge_straightened_quotes_do_not_discard_spans() -> None:
+    context = "The vendor said “no refunds” after day 30."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "Supported.",
+            "supporting_spans": [
+                {
+                    "response_span": "No refunds after day 30.",
+                    # Judge emitted straight quotes for the row's curly ones
+                    "context_span": 'The vendor said "no refunds" after day 30.',
+                }
+            ],
+            "contradicting_spans": [],
+        }
+    )
+
+    result = scorer.score("No refunds after day 30.", context=context)
+
+    assert result.details["supporting_spans"] == [
+        {
+            "response_span": "No refunds after day 30.",
+            "context_span": "The vendor said “no refunds” after day 30.",
+        }
+    ]
+    assert result.details["discarded_evidence_spans"] == 0
+
+
 def test_fabricated_evidence_spans_are_discarded() -> None:
     scorer = _scorer(
         {
