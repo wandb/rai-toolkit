@@ -369,6 +369,12 @@ LLM-as-judge scorers load prompt templates from `rai_toolkit/prompts/`
 (`judge_prompts.py`). Extend or override prompts there when tuning judges for
 a domain without forking scorer code.
 
+Available judge scorers include `FactualityJudge`, `FairnessJudge`,
+`ContentSafetyJudge`, `PrivacyJudge`, `SecurityJudge`, `TransparencyJudge`,
+`ExplainabilityJudge`, `RubricScorer`, and `GroundednessScorer`. The
+`GroundednessScorer` evaluates RAG responses only when retrieved context is
+present and retains verified supporting or contradicting spans as evidence.
+
 ## Weave-native evaluation in assessment
 
 When you pass `weave_project=` to `Assessor` (or `rai assess --weave-project
