@@ -317,6 +317,27 @@ class GroundednessScorer(LLMJudgeScorer):
         context: str = "",
         **kwargs: Any,
     ) -> ScorerResult:
+        expected = str(kwargs.get("expected") or "")
+        if _is_behavioral_refusal_expected(expected):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: this row expects refusal or boundary-setting "
+                    "behavior, not grounded factual claims. GroundednessScorer "
+                    "does not penalize correct safety refusals; use the relevant "
+                    "privacy/security/safety scorer instead."
+                ),
+                details={
+                    "skipped": "behavioral_refusal_expected",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "supporting_spans": [],
+                    "contradicting_spans": [],
+                },
+                assessed=False,
+            )
         if not context.strip():
             return ScorerResult(
                 score=0.0,

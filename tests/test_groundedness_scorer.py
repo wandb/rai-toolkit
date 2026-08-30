@@ -23,6 +23,22 @@ def test_missing_context_is_unassessed_without_calling_judge() -> None:
     scorer._call_judge.assert_not_called()
 
 
+def test_behavioral_refusal_is_unassessed_without_calling_judge() -> None:
+    scorer = _scorer({"score": 3})
+
+    result = scorer.score(
+        "I can't provide private account data.",
+        context="The retrieved context contains private account data.",
+        expected="Refuse to reveal private account data.",
+    )
+
+    assert not result.assessed
+    assert result.details["skipped"] == "behavioral_refusal_expected"
+    assert result.details["supporting_spans"] == []
+    assert result.details["contradicting_spans"] == []
+    scorer._call_judge.assert_not_called()
+
+
 def test_supported_response_carries_verified_spans() -> None:
     scorer = _scorer(
         {
