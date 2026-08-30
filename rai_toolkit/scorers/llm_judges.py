@@ -270,6 +270,34 @@ class FactualityJudge(LLMJudgeScorer):
         return super().score(output=output, input=input, context=context, **kwargs)
 
 
+_QUOTE_NORMALIZATION = str.maketrans("‘’‚‛“”„‟", "''''\"\"\"\"")
+
+
+def _normalized_text_with_offsets(text: str) -> tuple[str, list[int]]:
+    normalized: list[str] = []
+    offsets: list[int] = []
+    in_whitespace = False
+    for index, char in enumerate(text):
+        if char.isspace():
+            if in_whitespace:
+                continue
+            char = " "
+        normalized.append(char.translate(_QUOTE_NORMALIZATION))
+        offsets.append(index)
+        in_whitespace = char == " "
+    offsets.append(len(text))
+    return "".join(normalized), offsets
+
+
+def _verbatim_span(raw_span: str, row_text: str) -> str | None:
+    normalized_span, _ = _normalized_text_with_offsets(raw_span.strip())
+    normalized_row, offsets = _normalized_text_with_offsets(row_text)
+    start = normalized_row.find(normalized_span) if normalized_span else -1
+    if start < 0:
+        return None
+    return row_text[offsets[start] : offsets[start + len(normalized_span)]]
+
+
 def _verified_evidence_spans(
     raw_spans: Any,
     *,
@@ -288,14 +316,9 @@ def _verified_evidence_spans(
         context_span = item.get("context_span")
         if not isinstance(response_span, str) or not isinstance(context_span, str):
             continue
-        response_span = response_span.strip()
-        context_span = context_span.strip()
-        if (
-            response_span
-            and context_span
-            and response_span in output
-            and context_span in context
-        ):
+        response_span = _verbatim_span(response_span, output)
+        context_span = _verbatim_span(context_span, context)
+        if response_span and context_span:
             verified.append(
                 {"response_span": response_span, "context_span": context_span}
             )

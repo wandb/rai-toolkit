@@ -5,6 +5,7 @@
 from unittest.mock import Mock
 
 from rai_toolkit.scorers import GroundednessScorer
+from rai_toolkit.scorers.llm_judges import _verified_evidence_spans
 
 
 def _scorer(result: dict[str, object]) -> GroundednessScorer:
@@ -51,6 +52,15 @@ def test_supported_response_carries_verified_spans() -> None:
             "context_span": "Revenue grew by 12% year over year.",
         }
     ]
+
+
+def test_normalized_evidence_spans_preserve_verbatim_row_text() -> None:
+    spans = [{"response_span": 'The "answer" is 42.', "context_span": "It's correct."}]
+    assert _verified_evidence_spans(
+        spans,
+        output="The “answer”\n  is 42.",
+        context="The source says: It’s\tcorrect.",
+    ) == [{"response_span": "The “answer”\n  is 42.", "context_span": "It’s\tcorrect."}]
 
 
 def test_fabricated_evidence_spans_are_discarded() -> None:
