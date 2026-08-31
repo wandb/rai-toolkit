@@ -39,6 +39,19 @@ def test_behavioral_refusal_is_unassessed_without_calling_judge() -> None:
     scorer._call_judge.assert_not_called()
 
 
+def test_factual_expected_is_assessed_and_calls_judge() -> None:
+    scorer = _scorer({"score": 3})
+
+    result = scorer.score(
+        "Revenue was $10 million.",
+        context="The company's revenue was $10 million.",
+        expected="Answer with the revenue figure from the context.",
+    )
+
+    assert result.assessed
+    scorer._call_judge.assert_called_once()
+
+
 def test_supported_response_carries_verified_spans() -> None:
     scorer = _scorer(
         {
