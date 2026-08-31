@@ -290,7 +290,11 @@ def _normalized_text_with_offsets(text: str) -> tuple[str, list[int]]:
 
 
 def _verbatim_span(raw_span: str, row_text: str) -> str | None:
-    normalized_span, _ = _normalized_text_with_offsets(raw_span.strip())
+    raw_span = raw_span.strip()
+    if raw_span and raw_span in row_text:
+        return raw_span
+
+    normalized_span, _ = _normalized_text_with_offsets(raw_span)
     normalized_row, offsets = _normalized_text_with_offsets(row_text)
     start = normalized_row.find(normalized_span) if normalized_span else -1
     if start < 0:
