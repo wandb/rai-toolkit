@@ -1420,6 +1420,10 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "behavioral/refusal row"
     if "skipped" in details and details["skipped"] == "empty_context":
         return "no grounding context"
+    if "skipped" in details and details["skipped"] == "no_citations":
+        return "response cited no sources"
+    if "skipped" in details and details["skipped"] == "unresolved_citations":
+        return "cited sources could not be resolved"
     if "refusal/boundary" in explanation or "refusal or boundary" in explanation:
         return "behavioral/refusal row"
     if "no grounding context" in explanation or "no context" in explanation:

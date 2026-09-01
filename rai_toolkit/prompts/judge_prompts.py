@@ -297,6 +297,56 @@ state the specific evidence in the response that decides each criterion."""
 
 
 # Map judge names to their prompts for easy lookup
+CITATION_CORRECTNESS_SYSTEM = (
+    "You are a strict citation auditor. The Context is split into labelled "
+    "source blocks; a marker such as [source-id] in the Response names the "
+    "block it is attributed to. Judge only attribution: whether the source a "
+    "claim points at is the one that actually supports it. Never paraphrase "
+    "evidence spans."
+)
+
+CITATION_CORRECTNESS_TEMPLATE = """Grade whether the AI Response's citations point at sources that support them.
+
+**User Input:** {input}
+
+**Retrieved Context (labelled source blocks):** {context}
+
+**AI Response:** {output}
+
+Each `[source-id]` marker in the Response attributes a claim to the Context block
+carrying that label. For every marker, decide whether that specific block supports
+the claim it is attached to. A claim supported somewhere else in the Context but
+attributed to the wrong block is **misattributed**, not supported.
+
+Score on a 0-3 scale:
+- 3: every citation is supported by the block it names
+- 2: every citation resolves to a supporting block, with only a harmless imprecision
+- 1: at least one claim is attributed to a block that does not support it
+- 0: a citation naming a source absent from the Context, or the central claim is misattributed
+
+Return exact, verbatim evidence spans. Every span must be copied from the
+corresponding field above; do not paraphrase or use outside knowledge. For a
+misattributed citation, `context_span` must be the text from the block that
+*actually* supports the claim, so the correct source is identifiable.
+
+Respond in JSON format:
+{{
+  "score": <0-3>,
+  "explanation": "<brief evidence-based reasoning>",
+  "supported_citations": [
+    {{"marker": "<source-id as cited>", "response_span": "<exact response text>", "context_span": "<exact text from that block>"}}
+  ],
+  "misattributed_citations": [
+    {{"marker": "<source-id as cited>", "response_span": "<exact response text>", "context_span": "<exact text from the block that does support it>"}}
+  ]
+}}"""
+
+CITATION_FABRICATED_BLOCK = """
+
+**Already verified as fabricated (these markers name no source in the Context):** {fabricated}
+Do not attempt to verify them; they are confirmed absent. Factor them into the score."""
+
+
 JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     "FactualityJudge": {
         "system": FACTUALITY_JUDGE_SYSTEM,
@@ -305,6 +355,10 @@ JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     "GroundednessScorer": {
         "system": GROUNDEDNESS_SCORER_SYSTEM,
         "template": GROUNDEDNESS_SCORER_TEMPLATE,
+    },
+    "CitationCorrectnessScorer": {
+        "system": CITATION_CORRECTNESS_SYSTEM,
+        "template": CITATION_CORRECTNESS_TEMPLATE,
     },
     "RubricScorer": {
         "system": RUBRIC_JUDGE_SYSTEM,
