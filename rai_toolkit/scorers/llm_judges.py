@@ -20,6 +20,7 @@ from openai import OpenAI
 from rai_toolkit import _tracing
 from rai_toolkit.prompts.judge_prompts import (
     CITATION_FABRICATED_BLOCK,
+    CITATION_SCOPE_BLOCK,
     JUDGE_PROMPTS,
 )
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
@@ -651,16 +652,26 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         output: str,
         input: str = "",
         context: str = "",
+        resolved: str = "",
         fabricated: str = "",
     ) -> str:
-        """Standard judge prompt, plus the confirmed-fabricated markers.
+        """Standard judge prompt, scoped to the citations Python resolved.
+
+        ``resolved`` names the only markers the judge may grade. Without it the
+        judge grades every bracket it can see, including ones this scorer
+        classified as ambiguous or as not being citations at all. Discarding
+        those verdicts afterwards is not enough: the judge returns a single
+        holistic score, so an ungraded marker it disliked still drags the number
+        down.
 
         Formatted in two stages on purpose. The base template escapes the braces
         of its JSON example, and ``super()`` collapses them to single braces; a
         second ``.format()`` pass over that string would read them as fields and
-        raise. So the fabricated block is formatted separately and appended.
+        raise. So each appended block is formatted separately.
         """
         base = super()._format_prompt(output=output, input=input, context=context)
+        if resolved:
+            base += CITATION_SCOPE_BLOCK.format(resolved=resolved)
         if fabricated:
             base += CITATION_FABRICATED_BLOCK.format(fabricated=fabricated)
         return base
@@ -789,6 +800,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             output=output,
             input=input,
             context=context,
+            resolved=", ".join(f"[{marker}]" for marker in resolved),
             fabricated=", ".join(f"[{marker}]" for marker in fabricated),
         )
         result = self._call_judge(prompts["system"], user_prompt)
@@ -798,6 +810,11 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
 
         raw_supported = result.get("supported_citations")
         raw_misattributed = result.get("misattributed_citations")
+        # Only citations the response actually made are gradeable. Keying these
+        # on every parsed block would let the judge return a verdict about a
+        # source that was never cited and have it verify against that block's
+        # text, crediting the response for a citation it did not make.
+        resolved_keys = {marker.lower() for marker in resolved}
         # A supported citation must be evidenced from the block it names. A
         # misattributed one points at the wrong block by definition, so its
         # evidence is checked against the whole context: that span identifies
@@ -805,12 +822,16 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         supported = _verified_citation_spans(
             raw_supported,
             output=output,
-            haystacks={key: text for key, (_, text) in blocks.items()},
+            haystacks={
+                key: text
+                for key, (_, text) in blocks.items()
+                if key in resolved_keys
+            },
         )
         misattributed = _verified_citation_spans(
             raw_misattributed,
             output=output,
-            haystacks={key: context for key in blocks},
+            haystacks={key: context for key in resolved_keys},
         )
         raw_evidence_count = sum(
             len(items)

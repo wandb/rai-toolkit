@@ -537,3 +537,129 @@ def test_unlabelled_context_cannot_produce_a_fabrication() -> None:
     assert not result.assessed
     assert result.details["skipped"] == "unresolved_citations"
     assert result.details["fabricated_citations"] == []
+
+
+# --- review #27 item 2: evidence must come from a block the response cited ---
+
+
+def test_evidence_for_an_uncited_block_is_discarded() -> None:
+    # The response cites only [adverse-action]. fair-lending is a real parsed
+    # block, and the span is real text from it, but crediting it would mean
+    # scoring a citation the response never made.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Notices are required",
+                    "context_span": "creditworthiness criteria",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
+
+    assert result.details["supported_citations"] == []
+    assert result.details["discarded_evidence_spans"] == 1
+
+
+def test_misattributed_evidence_for_an_uncited_block_is_discarded() -> None:
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "ok",
+            "supported_citations": [],
+            "misattributed_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Notices are required",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
+
+    assert result.details["misattributed_citations"] == []
+    assert result.details["discarded_evidence_spans"] == 1
+
+
+def test_evidence_for_a_cited_block_is_still_accepted() -> None:
+    # Guards against over-narrowing: legitimate evidence must survive.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [
+                {
+                    "marker": "adverse-action",
+                    "response_span": "Notices are required for denied applicants",
+                    "context_span": "notices are required for denied applicants",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(
+        "Notices are required for denied applicants [adverse-action].", context=CONTEXT
+    )
+
+    assert len(result.details["supported_citations"]) == 1
+    assert result.details["discarded_evidence_spans"] == 0
+
+
+# --- review #27 item 3: the judge is told which citations to grade ----------
+
+
+def test_prompt_scopes_the_judge_to_resolved_citations() -> None:
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [],
+            "misattributed_citations": [],
+        }
+    )
+
+    scorer.score(
+        "Notices required [adverse-action]; see also [reg-b]; and arr[0].",
+        context=CONTEXT,
+    )
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "**Grade only these citations:** [adverse-action]" in prompt
+    # The ambiguous marker and the array index must not be offered for grading.
+    assert "[reg-b]" not in prompt.split("**Grade only these citations:**")[1]
+    assert "[0]" not in prompt.split("**Grade only these citations:**")[1]
+
+
+def test_scope_block_is_absent_when_nothing_is_graded() -> None:
+    scorer = _scorer()
+
+    prompt = scorer._format_prompt(output="o", input="i", context=CONTEXT)
+
+    assert "Grade only these citations" not in prompt
+    # The JSON example's escaped braces survived both formatting passes.
+    assert '"score": <0-3>' in prompt
+
+
+def test_scope_and_fabricated_blocks_can_both_appear() -> None:
+    scorer = _scorer()
+
+    prompt = scorer._format_prompt(
+        output="o",
+        input="i",
+        context=CONTEXT,
+        resolved="[adverse-action]",
+        fabricated="[reg-z-2024]",
+    )
+
+    assert "**Grade only these citations:** [adverse-action]" in prompt
+    assert "verified as fabricated" in prompt
+    assert '"score": <0-3>' in prompt

@@ -313,10 +313,11 @@ CITATION_CORRECTNESS_TEMPLATE = """Grade whether the AI Response's citations poi
 
 **AI Response:** {output}
 
-Each `[source-id]` marker in the Response attributes a claim to the Context block
-carrying that label. For every marker, decide whether that specific block supports
-the claim it is attached to. A claim supported somewhere else in the Context but
-attributed to the wrong block is **misattributed**, not supported.
+A `[source-id]` marker in the Response attributes a claim to the Context block
+carrying that label. For each citation you are asked to grade, decide whether that
+specific block supports the claim it is attached to. A claim supported somewhere
+else in the Context but attributed to the wrong block is **misattributed**, not
+supported.
 
 Score on a 0-3 scale:
 - 3: every citation is supported by the block it names
@@ -340,6 +341,12 @@ Respond in JSON format:
     {{"marker": "<source-id as cited>", "response_span": "<exact response text>", "context_span": "<exact text from the block that does support it>"}}
   ]
 }}"""
+
+CITATION_SCOPE_BLOCK = """
+
+**Grade only these citations:** {resolved}
+Every other bracketed token in the Response has already been checked and is not a
+citation to a retrieved source. Do not grade it and do not let it affect the score."""
 
 CITATION_FABRICATED_BLOCK = """
 
