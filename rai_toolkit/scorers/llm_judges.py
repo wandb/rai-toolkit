@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from openai import OpenAI
 
@@ -426,7 +426,7 @@ class GroundednessScorer(LLMJudgeScorer):
         )
 
 
-_CITATION_PATTERN = re.compile(r"\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](?:\([^)]*\))?")
+_CITATION_PATTERN = re.compile(r"\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](\([^)]*\))?")
 _SOURCE_LABEL_PATTERN = re.compile(
     r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\]\s*", re.MULTILINE
 )
@@ -463,62 +463,114 @@ def _parse_source_blocks(
     return blocks
 
 
+class _Citation(NamedTuple):
+    """A citation marker as written, plus whether it came from a markdown link."""
+
+    marker: str
+    from_link: bool
+
+
+def _marker_signature(marker: str) -> tuple[bool, bool, bool]:
+    """Shape fingerprint used to decide whether a marker looks like a source id.
+
+    Deliberately coarse: whether the marker is numeric, hyphenated, or dotted.
+    That is enough to tell ``fair-lending`` apart from ``TODO`` or ``0`` without
+    hard-coding any assumption about what a source id *should* look like.
+    """
+    return (marker.isdigit(), "-" in marker, "." in marker)
+
+
+def _is_fabrication_candidate(
+    citation: _Citation,
+    label_signatures: set[tuple[bool, bool, bool]],
+) -> bool:
+    """Is this marker close enough to a real source id to be accused of naming one?
+
+    A bracketed token only counts as a fabrication candidate when it resembles
+    the labels this context actually uses. The comparison is against the parsed
+    labels rather than a fixed rule, so a context whose sources are labelled
+    ``[TODO]`` would make ``[TODO]`` a legitimate citation.
+
+    Markdown-link text never qualifies. ``[Wikipedia](https://...)`` names a link
+    target, not a retrieved source, and confirming that a URL supports a claim is
+    a different problem from the one this scorer solves.
+    """
+    if citation.from_link:
+        return False
+    return _marker_signature(citation.marker) in label_signatures
+
+
 def _extract_citations(
     output: str,
     citation_pattern: re.Pattern[str] = _CITATION_PATTERN,
-) -> list[str]:
+) -> list[_Citation]:
     """Return the citation markers a response uses, in order, de-duplicated.
 
     Handles bare ``[source-id]`` markers and the markdown-link form
-    ``[source-id](https://...)``. Editorial asides such as ``[sic]`` are
-    dropped, as is any bracketed text containing spaces. Original casing is
-    preserved so reports show what the model actually wrote.
+    ``[source-id](https://...)``, recording which form each came from. Editorial
+    asides such as ``[sic]`` are dropped, as is any bracketed text containing
+    spaces. Original casing is preserved so reports show what the model wrote.
     """
     seen: set[str] = set()
-    citations: list[str] = []
-    for marker in citation_pattern.findall(output):
+    citations: list[_Citation] = []
+    for match in citation_pattern.finditer(output):
+        marker = match.group(1)
         key = marker.lower()
         if key in _EDITORIAL_MARKERS or key in seen:
             continue
         seen.add(key)
-        citations.append(marker)
+        groups = match.groups()
+        citations.append(
+            _Citation(marker=marker, from_link=len(groups) > 1 and bool(groups[1]))
+        )
     return citations
 
 
 def _resolve_citations(
-    citations: list[str],
+    citations: list[_Citation],
     blocks: dict[str, tuple[str, str]],
     context: str,
     citation_pattern: re.Pattern[str] = _CITATION_PATTERN,
-) -> tuple[list[str], list[str], list[str]]:
-    """Sort citation markers into (resolved, ambiguous, fabricated).
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Sort markers into (resolved, ambiguous, fabricated, ignored).
 
-    Three tiers, because "fabricated" is a strong claim and this parser is not
+    Four buckets, because "fabricated" is an accusation and this parser is not
     infallible:
 
-    - **resolved** - the marker names a parsed source block.
-    - **ambiguous** - the marker appears bracketed somewhere in the context but
-      not as a block label. That is most likely a shortcoming of the block
-      parsing above, so the response is not accused of inventing it.
-    - **fabricated** - the marker appears nowhere in the context at all.
+    - **resolved** - names a parsed source block; the judge grades it.
+    - **ambiguous** - appears bracketed somewhere in the context but not as a
+      block label. Most likely a shortcoming of the block parsing above, so the
+      response is not accused of inventing it.
+    - **fabricated** - appears nowhere in the context *and* resembles the labels
+      this context uses (see :func:`_is_fabrication_candidate`).
+    - **ignored** - a bracketed token that does not look like a source id at
+      all: ``arr[0]``, ``[TODO]``, markdown-link text. Not a citation, so
+      neither graded nor accused.
 
-    Matching is case-insensitive: a response writing ``[Fair-Lending]`` should
-    resolve against a ``[fair-lending]`` source rather than be called a
-    fabrication.
+    The ignored bucket exists because matching brackets is not the same as
+    finding citations. Without it, any bracketed token in a response that also
+    cites correctly would be reported as a fabricated source.
+
+    Matching is case-insensitive: a response writing ``[Fair-Lending]`` resolves
+    against a ``[fair-lending]`` source rather than being called a fabrication.
     """
-    inline = {marker.lower() for marker in citation_pattern.findall(context)}
+    inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
+    label_signatures = {_marker_signature(label) for label, _ in blocks.values()}
     resolved: list[str] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
-    for marker in citations:
-        key = marker.lower()
+    ignored: list[str] = []
+    for citation in citations:
+        key = citation.marker.lower()
         if key in blocks:
-            resolved.append(marker)
+            resolved.append(citation.marker)
         elif key in inline:
-            ambiguous.append(marker)
+            ambiguous.append(citation.marker)
+        elif _is_fabrication_candidate(citation, label_signatures):
+            fabricated.append(citation.marker)
         else:
-            fabricated.append(marker)
-    return resolved, ambiguous, fabricated
+            ignored.append(citation.marker)
+    return resolved, ambiguous, fabricated, ignored
 
 
 def _marker_key(marker: str) -> str:
@@ -613,21 +665,49 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             base += CITATION_FABRICATED_BLOCK.format(fabricated=fabricated)
         return base
 
-    def _unassessed(self, reason: str, explanation: str) -> ScorerResult:
-        """Build the standard un-assessed result for a row we cannot grade."""
+    def _marker_details(
+        self,
+        *,
+        fabricated: list[str] | None = None,
+        ambiguous: list[str] | None = None,
+        ignored: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Shared ``details`` keys describing what was found in the response."""
+        return {
+            "scorer_name": self.name,
+            "judge_model": self.model,
+            "supported_citations": [],
+            "misattributed_citations": [],
+            "fabricated_citations": fabricated or [],
+            "ambiguous_citations": ambiguous or [],
+            "ignored_markers": ignored or [],
+        }
+
+    def _unassessed(
+        self,
+        reason: str,
+        explanation: str,
+        *,
+        fabricated: list[str] | None = None,
+        ambiguous: list[str] | None = None,
+        ignored: list[str] | None = None,
+    ) -> ScorerResult:
+        """Build the standard un-assessed result for a row we cannot grade.
+
+        The classified markers are carried through even when nothing is graded,
+        so a coverage-gap report can name the sources involved instead of
+        reporting an empty list.
+        """
+        details = self._marker_details(
+            fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
+        )
+        details["skipped"] = reason
         return ScorerResult(
             score=0.0,
             passed=False,
             category=self.category,
             explanation=explanation,
-            details={
-                "skipped": reason,
-                "scorer_name": self.name,
-                "judge_model": self.model,
-                "supported_citations": [],
-                "misattributed_citations": [],
-                "fabricated_citations": [],
-            },
+            details=details,
             assessed=False,
         )
 
@@ -665,16 +745,43 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             )
 
         blocks = _parse_source_blocks(context, self.source_label_pattern)
-        resolved, ambiguous, fabricated = _resolve_citations(
+        resolved, ambiguous, fabricated, ignored = _resolve_citations(
             citations, blocks, context, self.citation_pattern
         )
         if not resolved:
+            if fabricated:
+                # The context parsed into labelled blocks and these markers look
+                # exactly like those labels, so they name sources that do not
+                # exist. That is a finding, not a coverage gap: score it rather
+                # than skipping the row.
+                details = self._marker_details(
+                    fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
+                )
+                details.update({"raw_score": None, "floor_applied": True})
+                return ScorerResult(
+                    score=0.0,
+                    passed=False,
+                    category=self.category,
+                    explanation=(
+                        "Cited sources are absent from the retrieved context: "
+                        f"{', '.join(fabricated)}. The context parsed into "
+                        "labelled sources and these markers match how those "
+                        "sources are named, so they are fabricated citations "
+                        "rather than an unrecognised citation format."
+                    ),
+                    details=details,
+                    assessed=True,
+                )
             return self._unassessed(
                 "unresolved_citations",
                 "Un-assessed: none of the response's citations resolve to a "
-                "labelled source in the retrieved context. That is as likely a "
-                "citation-format mismatch as a fabrication, so no judgement is "
-                "recorded either way.",
+                "labelled source in the retrieved context, and none resemble "
+                "how this context names its sources. That is more likely a "
+                "citation-format mismatch than a fabrication, so no judgement "
+                "is recorded either way.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
             )
 
         prompts = self._get_prompts()
@@ -733,6 +840,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 "misattributed_citations": misattributed,
                 "fabricated_citations": fabricated,
                 "ambiguous_citations": ambiguous,
+                "ignored_markers": ignored,
                 "discarded_evidence_spans": raw_evidence_count
                 - len(supported)
                 - len(misattributed),

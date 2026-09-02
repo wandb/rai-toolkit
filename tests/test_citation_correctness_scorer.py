@@ -5,6 +5,8 @@
 import re
 from unittest.mock import Mock
 
+import pytest
+
 from rai_toolkit.assessment.assessor import _classify_unassessed_reason
 from rai_toolkit.scorers.llm_judges import (
     CitationCorrectnessScorer,
@@ -58,7 +60,10 @@ def test_repeated_label_keeps_the_first_block() -> None:
 def test_extracts_bare_and_markdown_link_markers() -> None:
     output = "Notices are required [adverse-action]; rates are capped [1](https://x/y)."
 
-    assert _extract_citations(output) == ["adverse-action", "1"]
+    assert [(c.marker, c.from_link) for c in _extract_citations(output)] == [
+        ("adverse-action", False),
+        ("1", True),
+    ]
 
 
 def test_editorial_and_spaced_brackets_are_not_citations() -> None:
@@ -70,7 +75,7 @@ def test_editorial_and_spaced_brackets_are_not_citations() -> None:
 def test_markers_are_deduplicated_preserving_first_casing() -> None:
     output = "See [Fair-Lending] and again [fair-lending] and [FAIR-LENDING]."
 
-    assert _extract_citations(output) == ["Fair-Lending"]
+    assert [c.marker for c in _extract_citations(output)] == ["Fair-Lending"]
 
 
 # --- three-tier resolution -------------------------------------------------
@@ -79,22 +84,25 @@ def test_markers_are_deduplicated_preserving_first_casing() -> None:
 def test_resolution_sorts_markers_into_three_tiers() -> None:
     blocks = _parse_source_blocks(CONTEXT)
 
-    resolved, ambiguous, fabricated = _resolve_citations(
-        ["adverse-action", "reg-b", "reg-z-2024"], blocks, CONTEXT
+    resolved, ambiguous, fabricated, ignored = _resolve_citations(
+        _extract_citations("[adverse-action] [reg-b] [reg-z-2024]"), blocks, CONTEXT
     )
 
     assert resolved == ["adverse-action"]
     # Bracketed in the context but not a block label: our parsing is the likely
     # culprit, so the response is not accused of inventing it.
     assert ambiguous == ["reg-b"]
-    # Absent from the context entirely.
+    # Absent from the context entirely, and shaped like the real labels.
     assert fabricated == ["reg-z-2024"]
+    assert ignored == []
 
 
 def test_resolution_is_case_insensitive() -> None:
     blocks = _parse_source_blocks(CONTEXT)
 
-    resolved, _, fabricated = _resolve_citations(["Fair-Lending"], blocks, CONTEXT)
+    resolved, _, fabricated, _ignored = _resolve_citations(
+        _extract_citations("[Fair-Lending]"), blocks, CONTEXT
+    )
 
     assert resolved == ["Fair-Lending"]  # original casing preserved
     assert fabricated == []
@@ -384,3 +392,148 @@ async def test_score_async_takes_the_same_path_as_score() -> None:
     assert not result.assessed
     assert result.details["skipped"] == "no_citations"
     scorer._call_judge.assert_not_called()
+
+
+# --- review #27: bracketed tokens that are not citations --------------------
+# A bracketed token only counts as a citation when it resembles the labels the
+# context actually uses. Previously any unresolved bracket became a "fabricated"
+# citation and floored the score, so a correctly cited response failed merely
+# for containing an array index or a markdown link.
+
+@pytest.mark.parametrize(
+    "output,stray",
+    [
+        ("Notices required [adverse-action]. See arr[0] in the sample.", "0"),
+        ("Notices required [adverse-action]. Let f([x]) be the input.", "x"),
+        ("Notices required [adverse-action]. [TODO] confirm this.", "TODO"),
+        (
+            "Notices required [adverse-action]. See [Wikipedia](https://en.wikipedia.org/wiki/X).",
+            "Wikipedia",
+        ),
+    ],
+)
+def test_non_citation_brackets_do_not_floor_a_valid_response(
+    output: str, stray: str
+) -> None:
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "The cited block supports the claim.",
+            "supported_citations": [],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.score == 1.0
+    assert result.passed
+    assert not result.details["floor_applied"]
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == [stray]
+
+
+def test_markdown_link_text_still_resolves_when_it_names_a_real_source() -> None:
+    # Link text is never a fabrication candidate, but it is still a citation when
+    # it happens to name a parsed source.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(
+        "Notices are required [adverse-action](https://docs/adverse-action).",
+        context=CONTEXT,
+    )
+
+    assert result.assessed
+    assert result.score == 1.0
+    assert result.details["ignored_markers"] == []
+
+
+def test_a_real_fabrication_alongside_stray_brackets_still_floors() -> None:
+    # Guards against over-correcting: the shape test must not swallow genuine
+    # fabrications just because other junk is present.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(
+        "Notices required [adverse-action]. Rates capped [reg-z-2024]. See arr[0].",
+        context=CONTEXT,
+    )
+
+    assert result.score == 0.0
+    assert result.details["floor_applied"]
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+    assert result.details["ignored_markers"] == ["0"]
+
+
+# --- review #27: the all-unresolved branch ---------------------------------
+
+
+def test_all_unresolved_but_label_shaped_fails_instead_of_skipping() -> None:
+    # Context parsed into labelled blocks and the markers match how those blocks
+    # are named, so these are fabricated sources rather than a format mismatch.
+    scorer = _scorer({})
+
+    result = scorer.score(
+        "Rates are capped at 8% [reg-z-2024] per [reg-x-1998].", context=CONTEXT
+    )
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.details["floor_applied"]
+    assert result.details["fabricated_citations"] == ["reg-z-2024", "reg-x-1998"]
+    assert result.details["raw_score"] is None
+    scorer._call_judge.assert_not_called()
+
+
+def test_structurally_mismatched_markers_stay_unassessed() -> None:
+    # Numeric markers against slug labels: a citation-format mismatch is at
+    # least as likely as a fabrication, so no judgement is recorded.
+    scorer = _scorer({})
+
+    result = scorer.score("Notices are required [1] and [2].", context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "unresolved_citations"
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == ["1", "2"]
+    scorer._call_judge.assert_not_called()
+
+
+def test_unassessed_rows_still_name_the_markers_they_found() -> None:
+    # Previously these lists were hardcoded empty, so a coverage-gap report could
+    # not say which sources were involved.
+    scorer = _scorer({})
+
+    result = scorer.score("Per the implementing regulation [reg-b].", context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["ambiguous_citations"] == ["reg-b"]
+
+
+def test_unlabelled_context_cannot_produce_a_fabrication() -> None:
+    # With no parsed labels there are no signatures to match, so nothing is
+    # accused and the row stays un-assessed.
+    scorer = _scorer({})
+
+    result = scorer.score(
+        "Revenue grew 12% [reg-z-2024].",
+        context="FY2024 revenue: $12.4B. FY2023 revenue: $10.8B.",
+    )
+
+    assert not result.assessed
+    assert result.details["skipped"] == "unresolved_citations"
+    assert result.details["fabricated_citations"] == []
