@@ -92,12 +92,12 @@ class WeaveRAIScorer(weave.Scorer):
     _rai_scorer: BaseScorer | None = None
 
     def __init__(self, rai_scorer: BaseScorer, **kwargs: Any) -> None:
-        # Set ``name`` (a weave.Scorer base field) to the rai scorer's class
-        # name so the Evals UI shows e.g. ``FairnessJudge`` in the scorer
-        # column instead of an unhelpful object-ref label. ``name`` also
-        # drives ``Scorer.display_name``.
-        rai_class = type(rai_scorer).__name__
-        kwargs.setdefault("name", rai_class)
+        # Set ``name`` (a weave.Scorer base field) to the rai scorer's
+        # configured ``name`` so that different instances of the same class
+        # (e.g. two rubric scorers with different names) remain distinct in
+        # the Evals UI. Falls back to the class name via BaseScorer when the
+        # scorer has no explicit name set.
+        kwargs.setdefault("name", rai_scorer.name)
         super().__init__(
             rai_scorer_name=rai_scorer.name,
             rai_scorer_category=rai_scorer.category,

@@ -35,6 +35,11 @@ from rai_toolkit.compliance.eu_ai_act_mapping import (
     get_all_required_mit_categories,
     get_mit_categories_for_eu_requirement,
 )
+from rai_toolkit.compliance.nyc_ll144_mapping import (
+    NYC_LL_144_REQUIREMENTS,
+    get_all_nyc_ll144_mit_categories,
+    get_mit_categories_for_nyc_requirement,
+)
 from rai_toolkit.compliance.scorer_registry import (
     SCORER_REGISTRY,
     get_scorer_mapping,
@@ -130,6 +135,9 @@ class ComplianceMappingEngine:
         elif framework == Framework.EU_AI_ACT:
             mit_ids = get_all_required_mit_categories()
             return [MIT_TAXONOMY[id_] for id_ in mit_ids if id_ in MIT_TAXONOMY]
+        elif framework == Framework.NYC_LL_144:
+            mit_ids = get_all_nyc_ll144_mit_categories()
+            return [MIT_TAXONOMY[id_] for id_ in mit_ids if id_ in MIT_TAXONOMY]
         return []
 
     @staticmethod
@@ -143,6 +151,11 @@ class ComplianceMappingEngine:
             return {
                 req.title: req.mit_category_ids
                 for req in EU_AI_ACT_REQUIREMENTS.values()
+            }
+        elif framework == Framework.NYC_LL_144:
+            return {
+                req.title: req.mit_category_ids
+                for req in NYC_LL_144_REQUIREMENTS.values()
             }
         return {}
 
@@ -319,6 +332,31 @@ class ComplianceMappingEngine:
             covered = category_ids & required_mits
             coverage[req_id] = {
                 "article": req.article,
+                "title": req.title,
+                "description": req.description,
+                "total_categories": len(required_mits),
+                "covered_categories": len(covered),
+                "coverage_pct": len(covered) / len(required_mits) * 100 if required_mits else 0,
+                "covered_ids": sorted(covered),
+                "missing_ids": sorted(required_mits - category_ids),
+                "capabilities": req.rai_capabilities,
+            }
+
+        return coverage
+
+    def get_nyc_ll144_coverage(self, profile: ComplianceProfile) -> dict[str, dict[str, Any]]:
+        """Map a profile's categories to NYC LL 144 requirements.
+
+        Returns a dict of NYC LL 144 requirements with their coverage status.
+        """
+        category_ids = set(profile.category_ids)
+        coverage: dict[str, dict[str, Any]] = {}
+
+        for req_id, req in NYC_LL_144_REQUIREMENTS.items():
+            required_mits = set(req.mit_category_ids)
+            covered = category_ids & required_mits
+            coverage[req_id] = {
+                "section": req.section,
                 "title": req.title,
                 "description": req.description,
                 "total_categories": len(required_mits),
