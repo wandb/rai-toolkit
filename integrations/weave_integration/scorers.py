@@ -92,12 +92,8 @@ class WeaveRAIScorer(weave.Scorer):
     _rai_scorer: BaseScorer | None = None
 
     def __init__(self, rai_scorer: BaseScorer, **kwargs: Any) -> None:
-        # Set ``name`` (a weave.Scorer base field) to the rai scorer's class
-        # name so the Evals UI shows e.g. ``FairnessJudge`` in the scorer
-        # column instead of an unhelpful object-ref label. ``name`` also
-        # drives ``Scorer.display_name``.
-        rai_class = type(rai_scorer).__name__
-        kwargs.setdefault("name", rai_class)
+        scorer_name = rai_scorer.name or type(rai_scorer).__name__
+        kwargs.setdefault("name", scorer_name)
         super().__init__(
             rai_scorer_name=rai_scorer.name,
             rai_scorer_category=rai_scorer.category,
@@ -209,7 +205,7 @@ def _wrapped_scorer_display_name(call: Any) -> str:
         name = getattr(wrapper, "name", None)
         rai = getattr(wrapper, "_rai_scorer", None)
         if rai is not None:
-            rai_name = type(rai).__name__
+            rai_name = getattr(rai, "name", None) or type(rai).__name__
             category = getattr(rai, "category", None)
             return f"{rai_name} · {category}" if category else rai_name
         if name:
@@ -219,13 +215,19 @@ def _wrapped_scorer_display_name(call: Any) -> str:
         return "scorer"
 
 
-def make_weave_rai_scorer(rai_scorer: BaseScorer) -> WeaveRAIScorer:
+def make_weave_rai_scorer(
+    rai_scorer: BaseScorer,
+    name: str | None = None,
+) -> WeaveRAIScorer:
     """Construct a ``WeaveRAIScorer`` for an rai_toolkit scorer.
 
     Per-call display names come from ``call_display_name`` on the op (see
     :func:`_wrapped_scorer_display_name`); no dynamic subclassing needed.
     """
-    return WeaveRAIScorer(rai_scorer=rai_scorer)
+    kwargs: dict[str, Any] = {}
+    if name is not None:
+        kwargs["name"] = name
+    return WeaveRAIScorer(rai_scorer=rai_scorer, **kwargs)
 
 
 DEFAULT_COLUMN_MAP: dict[str, str] = {
