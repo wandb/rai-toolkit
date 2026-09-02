@@ -624,19 +624,33 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
     apps emit (see ``demo_app/finance_advisor.py``), with responses citing those
     ids as ``[source-id]`` or ``[source-id](url)``.
 
+    A bracketed token is not automatically a citation. Markers are compared
+    against the shape of the labels the context actually uses, so ``arr[0]``,
+    ``[TODO]`` and markdown-link text are recognised as not being source ids and
+    are reported under ``ignored_markers`` rather than treated as fabrications.
+    The comparison is derived from the context rather than hard-coded: a context
+    whose sources are labelled ``[TODO]`` makes ``[TODO]`` a real citation. This
+    is only as sharp as the labels are distinctive - against sources named ``1``,
+    ``2``, ``3`` an array index is genuinely indistinguishable from a citation.
+
+    Outcomes for a marker that does not name a parsed block:
+
+    - resembles the context's labels -> **fabricated**, scored 0
+    - appears bracketed elsewhere in the context -> **ambiguous**, not accused
+    - resembles nothing -> **ignored**, not a citation
+
+    A row is only returned un-assessed when nothing can be judged either way:
+    no citations at all, or citations that resolve to nothing *and* do not
+    resemble how this context names its sources, which is more likely a
+    citation-format mismatch than a fabrication.
+
     :attr:`citation_pattern` and :attr:`source_label_pattern` are overridable for
     a different label *syntax* (``<<source-id>>``, ``Source-1:``). They do not
     help with a different label *position*: a source label must lead its block,
     because block text is taken from the end of one label to the start of the
     next. Trailing-attribution context (``...text. [source-id]``) yields no
-    parsed blocks.
-
-    Known limitation: bracketed array indexing in a code sample (``arr[0]``)
-    parses as a numeric citation.
-
-    Both failures are safe rather than silent. A row whose citations cannot be
-    resolved is returned un-assessed, so it becomes a reported coverage gap
-    ("cited sources could not be resolved") instead of a wrong score.
+    parsed blocks, and with no labels to compare against nothing can be called a
+    fabrication, so such rows are reported as a coverage gap rather than scored.
     """
 
     name = "CitationCorrectnessScorer"
