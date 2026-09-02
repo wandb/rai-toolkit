@@ -422,6 +422,106 @@ class GroundednessScorer(LLMJudgeScorer):
         )
 
 
+
+
+class RetrievalRelevanceScorer(LLMJudgeScorer):
+    """Judge whether each retrieved context chunk is relevant to the user query.
+
+    Designed for RAG retrieval quality evaluation. The context string is expected
+    to contain multiple chunks separated by "---". The judge assigns a per-chunk
+    relevance verdict and an overall retrieval quality score on the 0-3 compliance
+    scale, then normalizes to 0-1.
+
+    Rows without retrieved context return ``assessed=False`` (no retrieval to
+    evaluate). Behavioral-refusal rows are also skipped, matching the convention
+    of FactualityJudge and GroundednessScorer.
+    """
+
+    name = "RetrievalRelevanceScorer"
+    description = "Evaluates whether retrieved context chunks are relevant to the user query"
+    category = "MIT-3.1"
+    _judge_name = "RetrievalRelevanceScorer"
+
+    def score(
+        self,
+        output: str,
+        input: str = "",
+        context: str = "",
+        **kwargs: Any,
+    ) -> ScorerResult:
+        expected = str(kwargs.get("expected") or "")
+        if _is_behavioral_refusal_expected(expected):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: this row expects refusal or boundary-setting "
+                    "behavior, not a retrieval quality signal. RetrievalRelevanceScorer "
+                    "does not evaluate behavioral rows; use the relevant privacy/"
+                    "security/safety scorer instead."
+                ),
+                details={
+                    "skipped": "behavioral_refusal_expected",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+        if not (context or "").strip():
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no retrieved context is available. "
+                    "RetrievalRelevanceScorer evaluates retrieval quality; "
+                    "without context there is nothing to assess."
+                ),
+                details={
+                    "skipped": "empty_context",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+
+        prompts = self._get_prompts()
+        user_prompt = self._format_prompt(output=output, input=input, context=context)
+        result = self._call_judge(prompts["system"], user_prompt)
+
+        raw_score = float(result.get("score", 0))
+        normalized = ScoreNormalizer.from_compliance_scale(raw_score)
+        passed = ScoreNormalizer.apply_threshold(normalized, self.threshold)
+
+        chunk_verdicts = result.get("chunk_verdicts") or []
+        if not isinstance(chunk_verdicts, list):
+            chunk_verdicts = []
+
+        relevant_count = sum(
+            1 for v in chunk_verdicts
+            if isinstance(v, dict) and v.get("relevance") == "relevant"
+        )
+        total_chunks = len(chunk_verdicts) if chunk_verdicts else 0
+
+        return ScorerResult(
+            score=normalized,
+            passed=passed,
+            category=self.category,
+            explanation=str(result.get("explanation", "")),
+            details={
+                "scorer_name": self.name,
+                "raw_score": raw_score,
+                "max_score": 3,
+                "judge_model": self.model,
+                "judge_response": result,
+                "chunk_verdicts": chunk_verdicts,
+                "relevant_chunks": relevant_count,
+                "total_chunks": total_chunks,
+            },
+        )
+
+
 class FairnessJudge(LLMJudgeScorer):
     """Evaluates fairness, bias, and discrimination (MIT-1.1)."""
 
