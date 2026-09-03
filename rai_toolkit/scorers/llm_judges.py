@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from openai import OpenAI
@@ -432,9 +433,17 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
     relevance verdict and an overall retrieval quality score on the 0-3 compliance
     scale, then normalizes to 0-1.
 
-    Rows without retrieved context return ``assessed=False`` (no retrieval to
-    evaluate). Behavioral-refusal rows are also skipped, matching the convention
-    of FactualityJudge and GroundednessScorer.
+    The chunk count is taken from the context itself (split on "---"), not from
+    the judge. Verdicts that are not dicts, carry a duplicate or out-of-range
+    ``chunk_index``, or use an unrecognized relevance label are discarded and
+    reported in ``details["discarded_verdicts"]``. If any real chunk lacks a
+    verdict, or the judge's overall score is not a finite 0-3 number, the row
+    returns ``assessed=False`` with ``skipped="judge_parse_failure"`` rather
+    than a silent pass.
+
+    Rows without retrieved context (including delimiter-only context) or with
+    a blank query return ``assessed=False``. Behavioral-refusal rows are also
+    skipped, matching the convention of FactualityJudge and GroundednessScorer.
     """
 
     name = "RetrievalRelevanceScorer"
@@ -468,7 +477,12 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 },
                 assessed=False,
             )
-        if not (context or "").strip():
+        # Count chunks off the real context, not off the judge's verdict list:
+        # the scorer and the judge must agree on what was actually retrieved.
+        # A context that is only delimiters (e.g. "---") yields zero real
+        # chunks and is treated the same as no context at all.
+        chunks = [c for c in (context or "").split("---") if c.strip()]
+        if not chunks:
             return ScorerResult(
                 score=0.0,
                 passed=False,
@@ -485,28 +499,122 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 },
                 assessed=False,
             )
+        if not (input or "").strip():
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no user query available. Retrieval relevance "
+                    "is judged against the query; with a blank query there is "
+                    "nothing for a chunk to be relevant to."
+                ),
+                details={
+                    "skipped": "empty_query",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
 
         prompts = self._get_prompts()
         user_prompt = self._format_prompt(output=output, input=input, context=context)
         result = self._call_judge(prompts["system"], user_prompt)
 
-        raw_score = float(result.get("score", 0))
+        # The overall score must be a finite number on the 0-3 scale. The
+        # string "NaN" survives float() as nan and "high" raises; both mean
+        # the judge response cannot be trusted.
+        try:
+            raw_score = float(result.get("score", 0))
+        except (TypeError, ValueError):
+            raw_score = float("nan")
+        if not math.isfinite(raw_score) or not 0 <= raw_score <= 3:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge's overall score is not a finite "
+                    "0-3 number. Inspect details.judge_response to see what "
+                    "the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": result,
+                    "total_chunks": len(chunks),
+                },
+                assessed=False,
+            )
+
+        # Keep only verdicts we can trust: dicts with a unique in-range
+        # integer chunk_index and a recognized label. Anything else is
+        # discarded and counted, and a real chunk with no verdict is a parse
+        # failure -- a silent judge must never read as perfect retrieval.
+        recognized_labels = ("relevant", "partially_relevant", "irrelevant")
+        valid_verdicts: dict[int, dict[str, Any]] = {}
+        discarded_verdicts = 0
+        raw_verdicts = result.get("chunk_verdicts")
+        if isinstance(raw_verdicts, list):
+            for verdict in raw_verdicts:
+                if not isinstance(verdict, dict):
+                    discarded_verdicts += 1
+                    continue
+                try:
+                    index = int(verdict.get("chunk_index"))
+                except (TypeError, ValueError):
+                    discarded_verdicts += 1
+                    continue
+                if (
+                    index in valid_verdicts
+                    or not 0 <= index < len(chunks)
+                    or verdict.get("relevance") not in recognized_labels
+                ):
+                    discarded_verdicts += 1
+                    continue
+                valid_verdicts[index] = verdict
+
+        missing_indexes = sorted(set(range(len(chunks))) - set(valid_verdicts))
+        if missing_indexes:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge did not return a parseable verdict "
+                    "for every chunk. Inspect details.judge_response to see "
+                    "what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": result,
+                    "total_chunks": len(chunks),
+                    "covered_chunks": len(valid_verdicts),
+                    "missing_chunk_indexes": missing_indexes,
+                    "discarded_verdicts": discarded_verdicts,
+                },
+                assessed=False,
+            )
+
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
-        passed = ScoreNormalizer.apply_threshold(normalized, self.threshold)
-
-        chunk_verdicts = result.get("chunk_verdicts") or []
-        if not isinstance(chunk_verdicts, list):
-            chunk_verdicts = []
-
+        chunk_verdicts = [
+            {
+                "chunk_index": index,
+                "relevance": valid_verdicts[index].get("relevance"),
+                "reason": str(valid_verdicts[index].get("reason", "")),
+            }
+            for index in sorted(valid_verdicts)
+        ]
         relevant_count = sum(
-            1 for v in chunk_verdicts
-            if isinstance(v, dict) and v.get("relevance") == "relevant"
+            1 for v in chunk_verdicts if v["relevance"] == "relevant"
         )
-        total_chunks = len(chunk_verdicts) if chunk_verdicts else 0
 
         return ScorerResult(
             score=normalized,
-            passed=passed,
+            passed=ScoreNormalizer.apply_threshold(normalized, self.threshold),
             category=self.category,
             explanation=str(result.get("explanation", "")),
             details={
@@ -514,10 +622,10 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 "raw_score": raw_score,
                 "max_score": 3,
                 "judge_model": self.model,
-                "judge_response": result,
                 "chunk_verdicts": chunk_verdicts,
                 "relevant_chunks": relevant_count,
-                "total_chunks": total_chunks,
+                "total_chunks": len(chunks),
+                "discarded_verdicts": discarded_verdicts,
             },
         )
 

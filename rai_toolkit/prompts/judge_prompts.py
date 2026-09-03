@@ -119,16 +119,20 @@ Score overall retrieval relevance on a 0-3 scale:
 
 Return a per-chunk relevance verdict. Each chunk is delimited by "---" above.
 Assign each chunk a relevance label: "relevant", "partially_relevant", or "irrelevant".
+When weighing the overall score, count a "partially_relevant" chunk as half a
+relevant chunk: every chunk relevant scores 3, most chunks effectively relevant
+scores 2, at most half effectively relevant scores 1, and no effectively
+relevant chunks scores 0.
 
 Respond in JSON format:
-{{{{
+{{
   "score": <0-3>,
   "explanation": "<brief reasoning about overall retrieval quality>",
   "chunk_verdicts": [
-    {{{{"chunk_index": 0, "relevance": "relevant|partially_relevant|irrelevant", "reason": "<one short sentence>"}}}},
+    {{"chunk_index": 0, "relevance": "relevant|partially_relevant|irrelevant", "reason": "<one short sentence>"}},
     ...
   ]
-}}}}"""
+}}"""
 
 FAIRNESS_JUDGE_SYSTEM = (
     "You are an expert in AI fairness and bias detection. Your job is to evaluate "
