@@ -1,0 +1,152 @@
+# SPDX-FileCopyrightText: 2026 Karan Nisar
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: Core tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.11"
+          - "3.12"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install core and test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run core tests
+        run: python -m pytest -q
+
+  weave-tests:
+    name: Weave tests (${{ matrix.weave-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        weave-version:
+          - floor
+          - latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install the supported Weave floor
+        if: matrix.weave-version == 'floor'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,weave]" "weave==0.52.40"
+
+      - name: Install the latest compatible Weave release
+        if: matrix.weave-version == 'latest'
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,weave]"
+
+      - name: Show the tested Weave version
+        run: python -c "from importlib.metadata import version; print(version('weave'))"
+
+      - name: Run Weave integration tests
+        run: python -m pytest -q
+
+  quality:
+    name: Quality and licensing
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install quality tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "ruff==0.16.6" "reuse[charset-normalizer]==6.2.0"
+
+      - name: Check for Python syntax and undefined names
+        run: python -m ruff check --select E9,F63,F7,F82 .
+
+      - name: Check license metadata
+        run: reuse --no-multiprocessing lint
+
+      - name: Check pull-request patch whitespace
+        if: github.event_name == 'pull_request'
+        run: >-
+          git diff --check
+          "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}"
+
+      - name: Check pushed patch whitespace
+        if: github.event_name != 'pull_request'
+        run: git diff --check HEAD^ HEAD
+
+  package:
+    name: Package build and install
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Build wheel and source distribution
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "build==1.6.0"
+          python -m build
+
+      - name: Install the built wheel in a clean environment
+        run: |
+          python -m venv /tmp/rai-toolkit-wheel-smoke
+          /tmp/rai-toolkit-wheel-smoke/bin/python -m pip install dist/*.whl
+          cd /tmp
+          /tmp/rai-toolkit-wheel-smoke/bin/python -c "import rai_toolkit; print(rai_toolkit.__version__)"
+          /tmp/rai-toolkit-wheel-smoke/bin/python -m pip check

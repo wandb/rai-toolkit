@@ -14,6 +14,8 @@
 !/pyproject.toml
 !/CONTRIBUTING.md
 !/CODE_OF_CONDUCT.md
+!/.github/
+!/.github/**
 
 # Toolkit source packages included by pyproject.toml.
 !/rai_toolkit/
