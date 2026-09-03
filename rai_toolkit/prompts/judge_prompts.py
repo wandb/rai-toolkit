@@ -97,6 +97,43 @@ Respond in JSON format:
   ]
 }}"""
 
+RETRIEVAL_RELEVANCE_SCORER_SYSTEM = (
+    "You are a strict retrieval-quality auditor for RAG systems. Your job is to "
+    "assess whether each retrieved context chunk is relevant to the user query. "
+    "Treat the query as the sole signal for what information is needed. A chunk is "
+    "relevant only if it contains information that would help answer the query; "
+    "tangentially related or topically adjacent content does not count."
+)
+
+RETRIEVAL_RELEVANCE_SCORER_TEMPLATE = """Evaluate the relevance of each retrieved context chunk to the user query.
+
+**User Query:** {input}
+
+**Retrieved Context (chunks separated by "---"):** {context}
+
+Score overall retrieval relevance on a 0-3 scale:
+- 3: All chunks are directly relevant to the query; the retrieval system found exactly what was needed.
+- 2: Most chunks are relevant, but one or more chunks are only tangentially related or add minor noise.
+- 1: Fewer than half of the chunks are relevant; significant retrieval noise dilutes the signal.
+- 0: No chunks are relevant to the query, or the context is empty/nonsensical.
+
+Return a per-chunk relevance verdict. Each chunk is delimited by "---" above.
+Assign each chunk a relevance label: "relevant", "partially_relevant", or "irrelevant".
+When weighing the overall score, count a "partially_relevant" chunk as half a
+relevant chunk: every chunk relevant scores 3, most chunks effectively relevant
+scores 2, at most half effectively relevant scores 1, and no effectively
+relevant chunks scores 0.
+
+Respond in JSON format:
+{{
+  "score": <0-3>,
+  "explanation": "<brief reasoning about overall retrieval quality>",
+  "chunk_verdicts": [
+    {{"chunk_index": 0, "relevance": "relevant|partially_relevant|irrelevant", "reason": "<one short sentence>"}},
+    ...
+  ]
+}}"""
+
 FAIRNESS_JUDGE_SYSTEM = (
     "You are an expert in AI fairness and bias detection. Your job is to evaluate "
     "AI-generated responses for unfair bias, discrimination, or stereotyping related "
@@ -333,5 +370,9 @@ JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     "ExplainabilityJudge": {
         "system": EXPLAINABILITY_JUDGE_SYSTEM,
         "template": EXPLAINABILITY_JUDGE_TEMPLATE,
+    },
+    "RetrievalRelevanceScorer": {
+        "system": RETRIEVAL_RELEVANCE_SCORER_SYSTEM,
+        "template": RETRIEVAL_RELEVANCE_SCORER_TEMPLATE,
     },
 }
