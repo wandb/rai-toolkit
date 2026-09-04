@@ -676,7 +676,13 @@ def _valid_judge_score(raw: Any) -> float | None:
 
     Validated here rather than in :class:`ScoreNormalizer` so an unusable score
     becomes an un-assessed row instead of either a wrong number or a traceback.
+
+    Booleans are rejected before the numeric check. ``bool`` subclasses ``int``,
+    so ``float(True)`` is ``1.0`` and a JSON ``true`` would otherwise be accepted
+    as a rubric score of 1.
     """
+    if isinstance(raw, bool):
+        return None
     try:
         value = float(raw)
     except (TypeError, ValueError):
@@ -686,6 +692,22 @@ def _valid_judge_score(raw: Any) -> float | None:
     if not 0.0 <= value <= _JUDGE_SCORE_MAX:
         return None
     return value
+
+
+def _json_safe(value: Any) -> Any:
+    """Render a rejected judge value in a form strict JSON can carry.
+
+    ``NaN`` and the infinities are accepted by ``json.dumps`` only with
+    ``allow_nan=True``, so storing one verbatim leaks non-standard JSON into
+    assessment reports. Rejected values are kept for audit, but as text.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return value
+    return repr(value)
 
 
 def _unverified_markers(
@@ -848,6 +870,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         fabricated: list[str] | None = None,
         ambiguous: list[str] | None = None,
         ignored: list[str] | None = None,
+        extra: dict[str, Any] | None = None,
     ) -> ScorerResult:
         """Build the standard un-assessed result for a row we cannot grade.
 
@@ -858,6 +881,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         details = self._marker_details(
             fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
         )
+        details.update(extra or {})
         details["skipped"] = reason
         return ScorerResult(
             score=0.0,
@@ -964,6 +988,19 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             fabricated=", ".join(f"[{marker}]" for marker in fabricated),
         )
         result = self._call_judge(prompts["system"], user_prompt)
+        # ``_call_judge`` returns whatever the reply parsed to, and valid JSON
+        # has a non-object top level for ``null`` or ``[]``. Reading a score off
+        # one raised rather than producing a controlled result.
+        if not isinstance(result, dict):
+            return self._unassessed(
+                "invalid_judge_output",
+                "Un-assessed: the judge reply was not a JSON object, so no "
+                "verdict could be read from it.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+                extra={"rejected_judge_reply": _json_safe(result)},
+            )
 
         raw_supported = result.get("supported_citations")
         raw_misattributed = result.get("misattributed_citations")
@@ -1004,7 +1041,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         unverified = _unverified_markers(resolved, supported, misattributed)
         if score_value is None or unverified:
             if score_value is None:
-                reason = "invalid_judge_score"
+                reason = "invalid_judge_output"
                 cause = (
                     "the judge returned a score that is not a finite number "
                     f"between 0 and {_JUDGE_SCORE_MAX:.0f}"
@@ -1023,7 +1060,8 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 )
                 details.update(
                     {
-                        "raw_score": result.get("score"),
+                        "raw_score": None,
+                        "rejected_raw_score": _json_safe(result.get("score")),
                         "floor_applied": True,
                         "judge_output_rejected": reason,
                     }
