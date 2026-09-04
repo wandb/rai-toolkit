@@ -1426,6 +1426,10 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "cited sources could not be resolved"
     if "skipped" in details and details["skipped"] == "unsupported_label_style":
         return "source labels are not distinguishable from ordinary text"
+    if "skipped" in details and details["skipped"] == "invalid_judge_score":
+        return "the judge returned an unusable score"
+    if "skipped" in details and details["skipped"] == "incomplete_judge_verdicts":
+        return "the judge did not assess every citation"
     if "refusal/boundary" in explanation or "refusal or boundary" in explanation:
         return "behavioral/refusal row"
     if "no grounding context" in explanation or "no context" in explanation:

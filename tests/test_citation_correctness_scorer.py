@@ -28,6 +28,48 @@ def _scorer(result: dict[str, object] | None = None) -> CitationCorrectnessScore
     return scorer
 
 
+def _covering_judge(
+    output: str,
+    context: str,
+    score: int = 3,
+    supported: list | None = None,
+    misattributed: list | None = None,
+) -> dict:
+    """A judge reply that returns a verifiable verdict for every resolved marker.
+
+    Coverage is required before a row can be assessed, so a fixture returning an
+    empty verdict list is now un-assessed rather than scored. Spans are taken
+    verbatim from the row so they survive verification: the block body for the
+    context span, and the opening of the response for the response span.
+    """
+    blocks = _parse_source_blocks(context)
+    resolved, _, _, _ = _resolve_citations(
+        _extract_citations(output), blocks, context
+    )
+    return {
+        "score": score,
+        "explanation": "The cited blocks support their claims.",
+        "supported_citations": [
+            {
+                "marker": marker,
+                "response_span": output[:10],
+                "context_span": blocks[marker.lower()][1],
+            }
+            for marker in resolved
+        ]
+        + list(supported or []),
+        "misattributed_citations": list(misattributed or []),
+    }
+
+
+def _covering_scorer(
+    output: str, context: str, **kwargs
+) -> CitationCorrectnessScorer:
+    """Scorer whose mocked judge fully covers the row's resolved citations."""
+    return _scorer(_covering_judge(output, context, **kwargs))
+
+
+
 # --- context parsing -------------------------------------------------------
 
 
@@ -255,30 +297,6 @@ def test_misattributed_citation_fails_and_names_the_real_source() -> None:
     assert result.details["misattributed_citations"][0]["marker"] == "fair-lending"
 
 
-def test_evidence_from_a_block_other_than_the_cited_one_is_discarded() -> None:
-    # The span is real context, but it lives in fair-lending, not the cited
-    # adverse-action block. Supporting evidence must come from the block named.
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "Claimed support.",
-            "supported_citations": [
-                {
-                    "marker": "adverse-action",
-                    "response_span": "Notices are required",
-                    "context_span": "creditworthiness criteria",
-                }
-            ],
-            "misattributed_citations": [],
-        }
-    )
-
-    result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
-
-    assert result.details["supported_citations"] == []
-    assert result.details["discarded_evidence_spans"] == 1
-
-
 def test_fabricated_citation_floors_the_score_over_the_judge() -> None:
     scorer = _scorer(
         {
@@ -304,13 +322,10 @@ def test_fabricated_citation_floors_the_score_over_the_judge() -> None:
 
 
 def test_ambiguous_markers_are_recorded_but_do_not_floor() -> None:
-    scorer = _scorer(
-        {"score": 3, "explanation": "ok", "supported_citations": [], "misattributed_citations": []}
-    )
+    output = "Notices are required [adverse-action]; see also [reg-b]."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    result = scorer.score(
-        "Notices are required [adverse-action]; see also [reg-b].", context=CONTEXT
-    )
+    result = scorer.score(output, context=CONTEXT)
 
     assert result.details["ambiguous_citations"] == ["reg-b"]
     assert result.details["fabricated_citations"] == []
@@ -346,20 +361,25 @@ def test_overridden_patterns_are_actually_used() -> None:
             r"^<<([A-Za-z0-9][A-Za-z0-9._\-]*)>>\s*", re.MULTILINE
         )
 
+    output = "Creditworthiness matters <<fair-lending>>."
+    context = "<<fair-lending>> Lending decisions must use creditworthiness criteria."
     scorer = AngleBracketCitations(api_key="test")
     scorer._call_judge = Mock(
         return_value={
             "score": 3,
             "explanation": "ok",
-            "supported_citations": [],
+            "supported_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Creditworthiness matters",
+                    "context_span": "Lending decisions must use creditworthiness",
+                }
+            ],
             "misattributed_citations": [],
         }
     )
 
-    result = scorer.score(
-        "Creditworthiness matters <<fair-lending>>.",
-        context="<<fair-lending>> Lending decisions must use creditworthiness criteria.",
-    )
+    result = scorer.score(output, context=context)
 
     assert result.assessed
     assert result.score == 1.0
@@ -425,14 +445,7 @@ async def test_score_async_takes_the_same_path_as_score() -> None:
 def test_non_citation_brackets_do_not_floor_a_valid_response(
     output: str, stray: str
 ) -> None:
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "The cited block supports the claim.",
-            "supported_citations": [],
-            "misattributed_citations": [],
-        }
-    )
+    scorer = _covering_scorer(output, CONTEXT)
 
     result = scorer.score(output, context=CONTEXT)
 
@@ -446,19 +459,10 @@ def test_non_citation_brackets_do_not_floor_a_valid_response(
 def test_markdown_link_text_still_resolves_when_it_names_a_real_source() -> None:
     # Link text is never a fabrication candidate, but it is still a citation when
     # it happens to name a parsed source.
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "ok",
-            "supported_citations": [],
-            "misattributed_citations": [],
-        }
-    )
+    output = "Notices are required [adverse-action](https://docs/adverse-action)."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    result = scorer.score(
-        "Notices are required [adverse-action](https://docs/adverse-action).",
-        context=CONTEXT,
-    )
+    result = scorer.score(output, context=CONTEXT)
 
     assert result.assessed
     assert result.score == 1.0
@@ -468,19 +472,10 @@ def test_markdown_link_text_still_resolves_when_it_names_a_real_source() -> None
 def test_a_real_fabrication_alongside_stray_brackets_still_floors() -> None:
     # Guards against over-correcting: the shape test must not swallow genuine
     # fabrications just because other junk is present.
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "ok",
-            "supported_citations": [],
-            "misattributed_citations": [],
-        }
-    )
+    output = "Notices required [adverse-action]. Rates capped [reg-z-2024]. See arr[0]."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    result = scorer.score(
-        "Notices required [adverse-action]. Rates capped [reg-z-2024]. See arr[0].",
-        context=CONTEXT,
-    )
+    result = scorer.score(output, context=CONTEXT)
 
     assert result.score == 0.0
     assert result.details["floor_applied"]
@@ -552,10 +547,11 @@ def test_unlabelled_context_cannot_produce_a_fabrication() -> None:
 # --- review #27 item 2: evidence must come from a block the response cited ---
 
 
-def test_evidence_for_an_uncited_block_is_discarded() -> None:
+def test_evidence_for_an_uncited_block_cannot_cover_a_cited_one() -> None:
     # The response cites only [adverse-action]. fair-lending is a real parsed
-    # block, and the span is real text from it, but crediting it would mean
-    # scoring a citation the response never made.
+    # block and the span is real text from it, but crediting that verdict would
+    # score a citation the response never made, and it leaves the citation that
+    # was made without any verdict at all.
     scorer = _scorer(
         {
             "score": 3,
@@ -573,11 +569,13 @@ def test_evidence_for_an_uncited_block_is_discarded() -> None:
 
     result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
 
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+    assert "adverse-action" in result.explanation
     assert result.details["supported_citations"] == []
-    assert result.details["discarded_evidence_spans"] == 1
 
 
-def test_misattributed_evidence_for_an_uncited_block_is_discarded() -> None:
+def test_misattributed_evidence_for_an_uncited_block_cannot_cover_a_cited_one() -> None:
     scorer = _scorer(
         {
             "score": 1,
@@ -595,7 +593,57 @@ def test_misattributed_evidence_for_an_uncited_block_is_discarded() -> None:
 
     result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
 
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
     assert result.details["misattributed_citations"] == []
+
+
+def test_evidence_from_the_wrong_block_leaves_the_citation_unestablished() -> None:
+    # The span is real context, but it lives in fair-lending rather than the
+    # cited adverse-action block. Discarding it leaves the citation with no
+    # surviving verdict, so the row cannot be reported as assessed.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "Claimed support.",
+            "supported_citations": [
+                {
+                    "marker": "adverse-action",
+                    "response_span": "Notices are required",
+                    "context_span": "creditworthiness criteria",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score("Notices are required [adverse-action].", context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+
+
+def test_extra_unverifiable_evidence_is_discarded_but_still_scores() -> None:
+    # Coverage is satisfied by the valid verdict, so the row is assessed; the
+    # bogus extra is dropped and counted rather than accepted.
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _covering_scorer(
+        output,
+        CONTEXT,
+        supported=[
+            {
+                "marker": "adverse-action",
+                "response_span": "Notices are required",
+                "context_span": "a passage the judge invented",
+            }
+        ],
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == 1.0
+    assert len(result.details["supported_citations"]) == 1
     assert result.details["discarded_evidence_spans"] == 1
 
 
@@ -700,7 +748,7 @@ JUDGE_PASS = {
 def test_indistinguishable_labels_never_produce_a_fabrication(
     context: str, output: str, stray: str
 ) -> None:
-    scorer = _scorer(JUDGE_PASS)
+    scorer = _covering_scorer(output, context)
 
     result = scorer.score(output, context=context)
 
@@ -723,11 +771,10 @@ def test_indistinguishable_labels_with_nothing_resolved_are_unassessed() -> None
 
 def test_structured_labels_still_accuse() -> None:
     # Control: the fix must not turn the scorer into one that never accuses.
-    scorer = _scorer(JUDGE_PASS)
+    output = "Notices required [adverse-action]. Rates capped [reg-z-2024]."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    result = scorer.score(
-        "Notices required [adverse-action]. Rates capped [reg-z-2024].", context=CONTEXT
-    )
+    result = scorer.score(output, context=CONTEXT)
 
     assert result.score == 0.0
     assert result.details["fabricated_citations"] == ["reg-z-2024"]
@@ -737,11 +784,11 @@ def test_structured_labels_still_accuse() -> None:
 def test_any_separator_makes_a_label_grammar_distinguishable(separator: str) -> None:
     label = f"doc{separator}1"
     absent = f"doc{separator}9"
-    scorer = _scorer(JUDGE_PASS)
+    output = f"Per [{label}] and [{absent}]."
+    context = f"[{label}] Retrieved guidance."
+    scorer = _covering_scorer(output, context)
 
-    result = scorer.score(
-        f"Per [{label}] and [{absent}].", context=f"[{label}] Retrieved guidance."
-    )
+    result = scorer.score(output, context=context)
 
     assert result.details["fabricated_citations"] == [absent]
 
@@ -757,7 +804,7 @@ def test_any_separator_makes_a_label_grammar_distinguishable(separator: str) -> 
     ],
 )
 def test_mixed_form_markers_classify_the_same_in_either_order(output: str) -> None:
-    scorer = _scorer(JUDGE_PASS)
+    scorer = _covering_scorer(output, CONTEXT)
 
     result = scorer.score(output, context=CONTEXT)
 
@@ -803,12 +850,149 @@ def test_citation_to_a_duplicated_label_is_not_gradeable() -> None:
 
 def test_a_surviving_block_is_still_gradeable_alongside_a_dropped_one() -> None:
     # Control: excluding bad source data must not disable the good sources too.
-    scorer = _scorer(JUDGE_PASS)
+    output = "Per [keep-this]."
+    context = "[dup] first\n\n[dup] second\n\n[keep-this] Real body text."
+    scorer = _covering_scorer(output, context)
 
-    result = scorer.score(
-        "Per [keep-this].",
-        context="[dup] first\n\n[dup] second\n\n[keep-this] Real body text.",
-    )
+    result = scorer.score(output, context=context)
 
     assert result.assessed
     assert result.score == 1.0
+
+
+# --- review #27 round 2, item 2: judge output must be usable and complete ---
+
+
+@pytest.mark.parametrize(
+    "score,reason",
+    [
+        ("NaN", "not a finite number"),
+        (float("inf"), "not finite"),
+        (99, "above the rubric maximum"),
+        (-5, "below zero"),
+        ("abc", "not numeric at all"),
+        (None, "missing from the reply"),
+    ],
+)
+def test_unusable_judge_score_is_unassessed(score: object, reason: str) -> None:
+    # "NaN" normalised to a perfect 1.0 because min(1.0, nan) is 1.0 in Python;
+    # 99 clamped upward to the same result; "abc" and a missing key raised out
+    # of float() as unhandled exceptions.
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "score": score,
+    }
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed, reason
+    assert result.details["skipped"] == "invalid_judge_score"
+
+
+def test_valid_scores_across_the_rubric_are_accepted() -> None:
+    output = "Notices are required for denied applicants [adverse-action]."
+    for raw, expected in ((3, 1.0), ("2", 2 / 3), (1, 1 / 3), (0, 0.0)):
+        scorer = _covering_scorer(output, CONTEXT, score=raw)
+        result = scorer.score(output, context=CONTEXT)
+        assert result.assessed
+        assert result.score == pytest.approx(expected)
+
+
+def test_verdict_missing_for_a_resolved_citation_is_unassessed() -> None:
+    # Two resolved citations, a verdict for one, and a score of 3 previously
+    # passed the row while one citation had never been assessed.
+    output = "Lending uses creditworthiness [fair-lending]. Notices required [adverse-action]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "Looks fine.",
+            "supported_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Lending uses creditworthiness",
+                    "context_span": "Lending decisions must use creditworthiness",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+    assert "adverse-action" in result.explanation
+
+
+def test_a_misattributed_verdict_counts_as_covering_a_citation() -> None:
+    # Coverage asks whether every citation got a checkable answer, not whether
+    # the answers were favourable.
+    output = "Notices are required for denied applicants [fair-lending]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "Attributed to the wrong block.",
+            "supported_citations": [],
+            "misattributed_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Notices are required for denied applicants",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == pytest.approx(1 / 3)
+    assert not result.passed
+
+
+def test_a_proven_fabrication_still_fails_when_judge_output_is_unusable() -> None:
+    # "unless a deterministic local finding already proves failure": an unusable
+    # reply must not rescue a response that provably cited a nonexistent source.
+    output = "Notices required [adverse-action]. Rates capped [reg-z-2024]."
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "score": "NaN",
+    }
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.details["floor_applied"]
+    assert result.details["judge_output_rejected"] == "invalid_judge_score"
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+def test_unusable_judge_output_is_named_in_the_coverage_report() -> None:
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "score": "NaN",
+    }
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert _classify_unassessed_reason(result) == "the judge returned an unusable score"
+
+
+def test_incomplete_verdicts_are_named_in_the_coverage_report() -> None:
+    output = "Lending uses creditworthiness [fair-lending]. Notices required [adverse-action]."
+    scorer = _scorer(
+        {"score": 3, "explanation": "ok", "supported_citations": [], "misattributed_citations": []}
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert (
+        _classify_unassessed_reason(result) == "the judge did not assess every citation"
+    )

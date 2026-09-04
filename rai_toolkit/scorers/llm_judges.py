@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 from typing import Any, NamedTuple
 
@@ -439,6 +440,9 @@ _EDITORIAL_MARKERS = frozenset({"sic", "ibid", "ed", "nb"})
 # in step with the character class of _CITATION_PATTERN.
 _LABEL_SEPARATORS = ("-", ".", "_")
 
+# Upper bound of the judge rubric, shared by validation and reporting.
+_JUDGE_SCORE_MAX = 3.0
+
 
 def _parse_source_blocks(
     context: str,
@@ -639,6 +643,52 @@ def _resolve_citations(
 def _marker_key(marker: str) -> str:
     """Normalise a citation marker for comparison: strip brackets, lowercase."""
     return marker.strip().strip("[]").strip().lower()
+
+
+def _valid_judge_score(raw: Any) -> float | None:
+    """Return the judge's score only if it is usable, else ``None``.
+
+    Nothing validated this before, so a judge returning ``"NaN"`` produced a
+    perfect compliance result: ``min(1.0, nan)`` is ``1.0`` in Python, so the
+    normaliser clamped it upward rather than rejecting it. An out-of-range 99
+    clamped the same way, and a non-numeric or missing score raised out of
+    ``float()`` as an unhandled exception.
+
+    Validated here rather than in :class:`ScoreNormalizer` so an unusable score
+    becomes an un-assessed row instead of either a wrong number or a traceback.
+    """
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
+        return None
+    if not 0.0 <= value <= _JUDGE_SCORE_MAX:
+        return None
+    return value
+
+
+def _unverified_markers(
+    resolved: list[str],
+    supported: list[dict[str, str]],
+    misattributed: list[dict[str, str]],
+) -> list[str]:
+    """Resolved citations the judge left without a verdict that survived checking.
+
+    Coverage is measured against the *verified* verdicts, not the raw judge
+    output. A verdict whose evidence could not be found in the row is discarded,
+    and a discarded verdict has established nothing, so counting it here would
+    let invented evidence satisfy the requirement it exists to enforce.
+
+    A ``misattributed`` verdict counts as covered. This asks whether every
+    citation got a checkable answer, not whether the answers were good.
+    """
+    judged = {
+        _marker_key(item["marker"])
+        for item in (*supported, *misattributed)
+        if "marker" in item
+    }
+    return [marker for marker in resolved if _marker_key(marker) not in judged]
 
 
 def _verified_citation_spans(
@@ -895,9 +945,6 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         )
         result = self._call_judge(prompts["system"], user_prompt)
 
-        raw_score = float(result.get("score", 0))
-        normalized = ScoreNormalizer.from_compliance_scale(raw_score)
-
         raw_supported = result.get("supported_citations")
         raw_misattributed = result.get("misattributed_citations")
         # Only citations the response actually made are gradeable. Keying these
@@ -928,6 +975,62 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             for items in (raw_supported, raw_misattributed)
             if isinstance(items, list)
         )
+
+        # Nothing becomes an assessed score until the judge's reply is usable.
+        # An unusable score once clamped into a perfect result, and a reply
+        # covering only some of the citations still passed the row, which is the
+        # confident-result-without-evidence failure this scorer exists to avoid.
+        score_value = _valid_judge_score(result.get("score"))
+        unverified = _unverified_markers(resolved, supported, misattributed)
+        if score_value is None or unverified:
+            if score_value is None:
+                reason = "invalid_judge_score"
+                cause = (
+                    "the judge returned a score that is not a finite number "
+                    f"between 0 and {_JUDGE_SCORE_MAX:.0f}"
+                )
+            else:
+                reason = "incomplete_judge_verdicts"
+                cause = (
+                    "the judge returned no verifiable verdict for "
+                    f"{', '.join(unverified)}"
+                )
+            if fabricated:
+                # A deterministic local finding already proves failure, so an
+                # unusable judge reply must not rescue the row into un-assessed.
+                details = self._marker_details(
+                    fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
+                )
+                details.update(
+                    {
+                        "raw_score": result.get("score"),
+                        "floor_applied": True,
+                        "judge_output_rejected": reason,
+                    }
+                )
+                return ScorerResult(
+                    score=0.0,
+                    passed=False,
+                    category=self.category,
+                    explanation=(
+                        "Cited sources are absent from the retrieved context: "
+                        f"{', '.join(fabricated)}. Recorded as a failure despite "
+                        f"unusable judge output, because {cause}."
+                    ),
+                    details=details,
+                    assessed=True,
+                )
+            return self._unassessed(
+                reason,
+                f"Un-assessed: {cause}, so no citation was established either "
+                "way.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+            )
+
+        raw_score = score_value
+        normalized = ScoreNormalizer.from_compliance_scale(raw_score)
 
         # A citation naming a source absent from the context is established in
         # Python, so it is not left to the judge to weigh. The judge's own score
