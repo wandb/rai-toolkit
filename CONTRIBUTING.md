@@ -1,7 +1,8 @@
 # Contributing to rai-toolkit
 
-Bug reports and PRs are welcome. For anything substantive, open an
-[issue](https://github.com/wandb/rai-toolkit/issues) first.
+Bug reports and pull requests are welcome. For a substantive change, start with
+an [issue](https://github.com/wandb/rai-toolkit/issues) so the scope and expected
+behaviour are clear.
 
 ## Setup
 
@@ -10,17 +11,40 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[all]"
 ```
 
+## Starting work
+
+Issues labeled [`status: available`](https://github.com/wandb/rai-toolkit/labels/status%3A%20available)
+have been scoped by a maintainer and are ready for contribution. The label
+describes the readiness of the issue, not whether someone has already started
+working on it.
+
+Before starting, check the issue's Development section and the open pull
+requests for linked work. If an open pull request already addresses the issue,
+join that discussion instead of duplicating the work.
+
+When you begin:
+
+1. Create a branch and open a draft pull request as soon as you have an initial
+   commit.
+2. Add `Closes #NN` to the pull request description.
+3. Briefly describe your approach and the tests you plan to run.
+
+The linked draft pull request is the signal that work has started. You do not
+need to post a `/claim` comment or wait for a status label change. Keep the pull
+request in draft while it is in progress, then mark it ready when the change and
+local validation are complete.
+
 ## Pull request guidelines
 
-- One change per PR.
-- Cover behavioural changes with a test.
-
-## Claiming an issue
-
-- Check the issue thread for an existing claim or linked PR before you start.
-- To claim, comment on the issue that you're working on it, then open your PR when ready. No need to wait for a reply.
-- One PR per issue. When duplicates land, the PR from whoever claimed first gets the review.
-- AI-assisted contributions are fine. Say so in the PR description, and be ready to explain and rework any line when asked.
+- Keep each pull request focused on one change.
+- Link the issue with `Closes #NN` when the pull request resolves it.
+- Explain what changed and call out any behaviour or compatibility
+  considerations.
+- Cover behavioural changes with tests.
+- List the exact local validation commands you ran and their results.
+- Update documentation when user-visible behaviour changes.
+- AI-assisted contributions are fine. Say so in the pull request description,
+  and be ready to explain and rework any line when asked.
 
 ## License headers
 <!--- REUSE-IgnoreStart -->
