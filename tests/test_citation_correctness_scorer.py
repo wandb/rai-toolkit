@@ -1107,3 +1107,132 @@ def test_unfloored_rows_keep_the_judge_explanation_unchanged() -> None:
     assert not result.details["floor_applied"]
     assert result.explanation == "The cited blocks support their claims."
     assert "absent from the retrieved context" not in result.explanation
+
+
+# --- review #27 round 3: source label boundary ---
+# A label must be followed by a real boundary. Without one, Markdown at the start
+# of a line parsed as a source block whose body was the URL, and a response
+# citing it could be graded against text that is not a source at all.
+
+
+@pytest.mark.parametrize(
+    "context,note",
+    [
+        ("[docs](https://example.com) This is a Markdown link.", "inline link"),
+        ("[docs]: https://example.com", "reference definition"),
+        ("[docs]abc no boundary after the bracket", "no boundary"),
+    ],
+)
+def test_markdown_constructs_are_not_source_blocks(context: str, note: str) -> None:
+    assert _parse_source_blocks(context) == {}, note
+
+
+def test_citing_a_markdown_link_is_not_gradeable() -> None:
+    context = "[docs](https://example.com) This is a Markdown link in the context."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "supported_citations": [
+                {
+                    "marker": "docs",
+                    "response_span": "Per the docs",
+                    "context_span": "This is a Markdown link",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score("Per the docs [docs].", context=context)
+
+    assert not result.assessed
+    scorer._call_judge.assert_not_called()
+
+
+def test_a_real_block_following_markdown_is_still_parsed() -> None:
+    # Control: rejecting link syntax must not reject the block after it.
+    context = (
+        "[docs](https://example.com) A link.\n\n[fair-lending] Real body text here."
+    )
+
+    assert sorted(_parse_source_blocks(context)) == ["fair-lending"]
+
+
+# --- review #27 round 3: label grammar consistency ---
+
+
+def test_underscore_labels_do_not_accuse_ordinary_tokens() -> None:
+    # _marker_signature had no underscore bit while the separator list did, so
+    # [source_one] and [TODO] shared a signature and the token was floored to 0.
+    context = "[source_one] Guidance about lending rules."
+    output = "Per the rules [source_one]. [TODO] check this."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 1.0
+    assert result.passed
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == ["TODO"]
+
+
+def test_underscore_labels_still_accuse_their_own_style() -> None:
+    context = "[source_one] Guidance about lending rules."
+    output = "Per the rules [source_one] and [source_two]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == ["source_two"]
+
+
+def test_one_unstructured_label_does_not_disable_the_others() -> None:
+    # Distinguishability is decided per label style. A bare [2] alongside
+    # [doc-1] used to disable accusation for the hyphenated style as well.
+    context = "[doc-1] Alpha guidance here.\n\n[2] Beta guidance here."
+    output = "Alpha claim [doc-1]. Missing [doc-99]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == ["doc-99"]
+
+
+def test_an_unstructured_style_is_still_not_accused() -> None:
+    context = "[doc-1] Alpha guidance here.\n\n[2] Beta guidance here."
+    output = "Alpha claim [doc-1]. Missing [9]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == ["9"]
+
+
+def test_bracket_notation_copied_from_the_context_is_ignored() -> None:
+    # arr[0] present in the context used to be classed ambiguous before its
+    # shape was checked, which blocked the row as partial coverage.
+    context = "[fair-lending] Use arr[0] to index the schedule."
+    output = "Index with arr[0] per [fair-lending]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.assessed
+    assert result.score == 1.0
+    assert result.details["ignored_markers"] == ["0"]
+    assert result.details["ambiguous_citations"] == []
+
+
+def test_a_label_shaped_marker_inside_a_passage_is_still_ambiguous() -> None:
+    # Control for the reorder: shape gating must not collapse the ambiguous tier.
+    output = "Per the implementing regulation [reg-b] and [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.details["ambiguous_citations"] == ["reg-b"]
+    assert result.details["fabricated_citations"] == []

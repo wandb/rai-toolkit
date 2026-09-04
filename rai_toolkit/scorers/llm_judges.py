@@ -429,8 +429,12 @@ class GroundednessScorer(LLMJudgeScorer):
 
 
 _CITATION_PATTERN = re.compile(r"\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](\([^)]*\))?")
+# A source label must be followed by a real boundary. Without one, a Markdown
+# link (``[docs](https://...)``) or a reference definition (``[docs]: https://``)
+# at the start of a line parses as a source block whose body is the URL, and a
+# response citing it can then be graded against text that is not a source at all.
 _SOURCE_LABEL_PATTERN = re.compile(
-    r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\]\s*", re.MULTILINE
+    r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](?=\s|$)\s*", re.MULTILINE
 )
 
 # Bracketed editorial asides that look like slug citations but are not.
@@ -498,63 +502,70 @@ class _Citation(NamedTuple):
     from_link: bool
 
 
-def _marker_signature(marker: str) -> tuple[bool, bool, bool]:
+def _marker_signature(marker: str) -> tuple[bool, ...]:
     """Shape fingerprint used to decide whether a marker looks like a source id.
 
-    Deliberately coarse: whether the marker is numeric, hyphenated, or dotted.
-    That is enough to tell ``fair-lending`` apart from ``TODO`` or ``0`` without
-    hard-coding any assumption about what a source id *should* look like.
+    Deliberately coarse: whether the marker is numeric, and which separators it
+    carries. That is enough to tell ``fair-lending`` apart from ``TODO`` or ``0``
+    without hard-coding any assumption about what a source id *should* look like.
+
+    Every character in :data:`_LABEL_SEPARATORS` gets a bit. The two must stay in
+    step: an underscore counted as structure by
+    :func:`_accusable_signatures` but absent here made ``source_one`` and
+    ``TODO`` indistinguishable, so an ordinary editorial token was floored to 0.
     """
-    return (marker.isdigit(), "-" in marker, "." in marker)
+    return (marker.isdigit(), *(separator in marker for separator in _LABEL_SEPARATORS))
 
 
-def _labels_are_distinguishable(blocks: dict[str, tuple[str, str]]) -> bool:
-    """Can a citation to these sources be told apart from an ordinary bracket?
+def _accusable_signatures(
+    blocks: dict[str, tuple[str, str]],
+) -> set[tuple[bool, ...]]:
+    """Shapes for which a citation can be told apart from an ordinary bracket.
 
-    The shape comparison in :func:`_is_fabrication_candidate` is only meaningful
-    when the source ids carry structure that incidental brackets do not. Labels
-    like ``fair-lending`` qualify; bare words (``doc``) and bare numbers (``1``)
-    do not, because ``[x]``, ``[TODO]`` and ``arr[0]`` are indistinguishable from
+    The comparison in :func:`_is_fabrication_candidate` is only meaningful when
+    the source ids carry structure that incidental brackets do not. Labels like
+    ``fair-lending`` qualify; bare words (``doc``) and bare numbers (``1``) do
+    not, because ``[x]``, ``[TODO]`` and ``arr[0]`` are indistinguishable from
     them.
 
-    When the grammar cannot support the distinction, nothing is accused. That
-    loses genuine fabrications under such label styles, which is the intended
-    trade: a missed finding is recoverable, a false compliance failure is not.
-    Callers wanting accusation for a bare-word scheme can supply a stricter
-    :attr:`CitationCorrectnessScorer.citation_pattern`, which makes the grammar
-    distinguishable by construction.
+    Decided per label style rather than for the context as a whole. A single
+    unstructured label used to disable accusation for every other style present,
+    so a context labelled ``[doc-1]`` and ``[2]`` let a missing ``[doc-99]``
+    through even though the hyphenated style was perfectly distinguishable.
+
+    Where a style cannot support the distinction, nothing of that shape is
+    accused. That loses genuine fabrications under bare-word and bare-number
+    schemes, which is the intended trade: a missed finding is recoverable, a
+    false compliance failure is not. Callers wanting accusation for such a scheme
+    can supply a stricter :attr:`CitationCorrectnessScorer.citation_pattern`,
+    which makes the grammar distinguishable by construction.
     """
-    if not blocks:
-        return False
-    return all(
-        any(separator in label for separator in _LABEL_SEPARATORS)
+    return {
+        _marker_signature(label)
         for label, _ in blocks.values()
-    )
+        if any(separator in label for separator in _LABEL_SEPARATORS)
+    }
 
 
 def _is_fabrication_candidate(
     citation: _Citation,
-    label_signatures: set[tuple[bool, bool, bool]],
-    labels_distinguishable: bool,
+    accusable_signatures: set[tuple[bool, ...]],
 ) -> bool:
     """Is this marker close enough to a real source id to be accused of naming one?
 
-    A bracketed token only counts as a fabrication candidate when the context's
-    label grammar can support the distinction at all (see
-    :func:`_labels_are_distinguishable`) *and* the marker resembles the labels
-    that grammar produces. The comparison is against the parsed labels rather
-    than a fixed rule, so a context whose sources are labelled ``[doc-1]`` treats
-    ``[doc-2]`` as a plausible citation.
+    A bracketed token only counts as a fabrication candidate when it matches a
+    label style this context uses distinguishably (see
+    :func:`_accusable_signatures`). The comparison is against the parsed labels
+    rather than a fixed rule, so a context whose sources are labelled ``[doc-1]``
+    treats ``[doc-2]`` as a plausible citation.
 
     Markdown-link text never qualifies. ``[Wikipedia](https://...)`` names a link
     target, not a retrieved source, and confirming that a URL supports a claim is
     a different problem from the one this scorer solves.
     """
-    if not labels_distinguishable:
-        return False
     if citation.from_link:
         return False
-    return _marker_signature(citation.marker) in label_signatures
+    return _marker_signature(citation.marker) in accusable_signatures
 
 
 def _extract_citations(
@@ -621,19 +632,28 @@ def _resolve_citations(
     against a ``[fair-lending]`` source rather than being called a fabrication.
     """
     inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
-    label_signatures = {_marker_signature(label) for label, _ in blocks.values()}
-    distinguishable = _labels_are_distinguishable(blocks)
+    accusable = _accusable_signatures(blocks)
     resolved: list[str] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
     ignored: list[str] = []
     for citation in citations:
         key = citation.marker.lower()
+        candidate = _is_fabrication_candidate(citation, accusable)
         if key in blocks:
             resolved.append(citation.marker)
+        elif accusable and not candidate:
+            # Shape is checked before inline presence, but only when there is a
+            # structured label style to compare against. Testing presence first
+            # made ordinary bracket notation copied out of the context
+            # (``arr[0]``) ambiguous, which blocks the whole row. Testing shape
+            # unconditionally would go too far the other way: with no structured
+            # style parsed there is nothing to judge shape by, and a marker that
+            # does appear bracketed in the context is still a plausible citation.
+            ignored.append(citation.marker)
         elif key in inline:
             ambiguous.append(citation.marker)
-        elif _is_fabrication_candidate(citation, label_signatures, distinguishable):
+        elif candidate:
             fabricated.append(citation.marker)
         else:
             ignored.append(citation.marker)
@@ -911,7 +931,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 )
             # Only when labels exist but lack structure. An unlabelled context
             # is a different situation and keeps the generic reason below.
-            if blocks and not _labels_are_distinguishable(blocks):
+            if blocks and not _accusable_signatures(blocks):
                 return self._unassessed(
                     "unsupported_label_style",
                     "Un-assessed: the retrieved context labels its sources in a "
