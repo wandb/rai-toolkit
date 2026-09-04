@@ -48,10 +48,20 @@ def test_mid_line_bracket_does_not_start_a_new_block() -> None:
     assert "[reg-b]" in blocks["fair-lending"][1]
 
 
-def test_repeated_label_keeps_the_first_block() -> None:
+def test_repeated_label_is_dropped_rather_than_resolved_to_the_first() -> None:
+    # Keeping the first left the judge reading a context this scorer could not
+    # reproduce, so evidence quoted from the later block was rejected while the
+    # score still passed. Ambiguous source data is excluded instead.
     blocks = _parse_source_blocks("[dup] first body\n\n[dup] second body")
 
-    assert blocks["dup"][1] == "first body"
+    assert blocks == {}
+
+
+def test_empty_block_is_not_a_citable_source() -> None:
+    # A label with no body cannot support any claim, so it must not be citable.
+    blocks = _parse_source_blocks("[source-a]\n[source-b] Other text here.")
+
+    assert sorted(blocks) == ["source-b"]
 
 
 # --- citation extraction ---------------------------------------------------
@@ -663,3 +673,142 @@ def test_scope_and_fabricated_blocks_can_both_appear() -> None:
     assert "**Grade only these citations:** [adverse-action]" in prompt
     assert "verified as fabricated" in prompt
     assert '"score": <0-3>' in prompt
+
+
+# --- review #27 round 2, item 1: label styles that cannot carry an accusation ---
+# The shape signature only separates citations from ordinary brackets when the
+# source ids have structure. Against bare words or bare numbers, [x], [TODO] and
+# arr[0] are indistinguishable from a real label, so accusing on them produced a
+# false compliance failure on a correctly cited response.
+
+JUDGE_PASS = {
+    "score": 3,
+    "explanation": "The cited block supports the claim.",
+    "supported_citations": [],
+    "misattributed_citations": [],
+}
+
+
+@pytest.mark.parametrize(
+    "context,output,stray",
+    [
+        ("[doc] Retrieved guidance about lending.", "Per [doc], let f([x]) be the input.", "x"),
+        ("[doc] Retrieved guidance about lending.", "Per [doc]. [TODO] confirm this.", "TODO"),
+        ("[1] Retrieved guidance about lending.", "Per [1], see arr[0] in the sample.", "0"),
+    ],
+)
+def test_indistinguishable_labels_never_produce_a_fabrication(
+    context: str, output: str, stray: str
+) -> None:
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 1.0
+    assert result.passed
+    assert not result.details["floor_applied"]
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == [stray]
+
+
+def test_indistinguishable_labels_with_nothing_resolved_are_unassessed() -> None:
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score("See [other] for detail.", context="[doc] Retrieved guidance.")
+
+    assert not result.assessed
+    assert result.details["skipped"] == "unsupported_label_style"
+    scorer._call_judge.assert_not_called()
+
+
+def test_structured_labels_still_accuse() -> None:
+    # Control: the fix must not turn the scorer into one that never accuses.
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(
+        "Notices required [adverse-action]. Rates capped [reg-z-2024].", context=CONTEXT
+    )
+
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+@pytest.mark.parametrize("separator", ["-", ".", "_"])
+def test_any_separator_makes_a_label_grammar_distinguishable(separator: str) -> None:
+    label = f"doc{separator}1"
+    absent = f"doc{separator}9"
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(
+        f"Per [{label}] and [{absent}].", context=f"[{label}] Retrieved guidance."
+    )
+
+    assert result.details["fabricated_citations"] == [absent]
+
+
+# --- review #27 round 2, item 2: classification must not depend on order ---
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        "Per [fair-lending]. See [fake-id](https://x/y) and later [fake-id].",
+        "Per [fair-lending]. See [fake-id] and later [fake-id](https://x/y).",
+    ],
+)
+def test_mixed_form_markers_classify_the_same_in_either_order(output: str) -> None:
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == ["fake-id"]
+    assert result.score == 1.0
+
+
+def test_extraction_collapses_link_form_across_occurrences() -> None:
+    for output in (
+        "[fake-id](https://x/y) then [fake-id]",
+        "[fake-id] then [fake-id](https://x/y)",
+    ):
+        (citation,) = _extract_citations(output)
+        assert citation.marker == "fake-id"
+        assert citation.from_link is True
+
+
+# --- review #27 round 2, item 7/8: empty and duplicate blocks ---
+
+
+def test_citation_to_an_empty_block_is_not_gradeable() -> None:
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(
+        "Per [source-a].", context="[source-a]\n[source-b] Other text here."
+    )
+
+    assert not result.assessed
+    assert result.details["ambiguous_citations"] == ["source-a"]
+    scorer._call_judge.assert_not_called()
+
+
+def test_citation_to_a_duplicated_label_is_not_gradeable() -> None:
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score("Per [dup].", context="[dup] first body\n\n[dup] second body")
+
+    assert not result.assessed
+    assert result.details["ambiguous_citations"] == ["dup"]
+    scorer._call_judge.assert_not_called()
+
+
+def test_a_surviving_block_is_still_gradeable_alongside_a_dropped_one() -> None:
+    # Control: excluding bad source data must not disable the good sources too.
+    scorer = _scorer(JUDGE_PASS)
+
+    result = scorer.score(
+        "Per [keep-this].",
+        context="[dup] first\n\n[dup] second\n\n[keep-this] Real body text.",
+    )
+
+    assert result.assessed
+    assert result.score == 1.0

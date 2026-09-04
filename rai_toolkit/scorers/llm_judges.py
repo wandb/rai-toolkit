@@ -435,6 +435,10 @@ _SOURCE_LABEL_PATTERN = re.compile(
 # Bracketed editorial asides that look like slug citations but are not.
 _EDITORIAL_MARKERS = frozenset({"sic", "ibid", "ed", "nb"})
 
+# Characters that give a source id structure ordinary prose brackets lack. Kept
+# in step with the character class of _CITATION_PATTERN.
+_LABEL_SEPARATORS = ("-", ".", "_")
+
 
 def _parse_source_blocks(
     context: str,
@@ -445,14 +449,30 @@ def _parse_source_blocks(
     Recognises the ``[source-id] text`` block format the toolkit's reference RAG
     apps emit (see ``demo_app/finance_advisor.py``). A label only counts when it
     starts a line, so bracketed text inside a passage is not mistaken for a new
-    source. The first block wins if a label repeats.
+    source.
+
+    Two kinds of label are excluded rather than trusted:
+
+    - **empty blocks**, where the next label follows immediately. A source with
+      no body cannot support any claim, so treating it as citable lets a row
+      pass on evidence that could never have verified.
+    - **repeated labels**, which are ambiguous source data. Keeping the first
+      and dropping the rest leaves the judge reading a context this scorer
+      cannot reproduce, so evidence quoted from a later block is rejected while
+      the score still passes.
+
+    Both are excluded from ``blocks`` rather than resolved to a guess. Because
+    their labels still appear in the context, a citation naming one is reported
+    as ambiguous rather than fabricated.
     """
     matches = list(label_pattern.finditer(context))
+    keys = [match.group(1).lower() for match in matches]
+    repeated = {key for key in keys if keys.count(key) > 1}
     blocks: dict[str, tuple[str, str]] = {}
     for position, match in enumerate(matches):
         label = match.group(1)
         key = label.lower()
-        if key in blocks:
+        if key in repeated:
             continue
         start = match.end()
         end = (
@@ -460,7 +480,10 @@ def _parse_source_blocks(
             if position + 1 < len(matches)
             else len(context)
         )
-        blocks[key] = (label, context[start:end].strip())
+        body = context[start:end].strip()
+        if not body:
+            continue
+        blocks[key] = (label, body)
     return blocks
 
 
@@ -481,21 +504,50 @@ def _marker_signature(marker: str) -> tuple[bool, bool, bool]:
     return (marker.isdigit(), "-" in marker, "." in marker)
 
 
+def _labels_are_distinguishable(blocks: dict[str, tuple[str, str]]) -> bool:
+    """Can a citation to these sources be told apart from an ordinary bracket?
+
+    The shape comparison in :func:`_is_fabrication_candidate` is only meaningful
+    when the source ids carry structure that incidental brackets do not. Labels
+    like ``fair-lending`` qualify; bare words (``doc``) and bare numbers (``1``)
+    do not, because ``[x]``, ``[TODO]`` and ``arr[0]`` are indistinguishable from
+    them.
+
+    When the grammar cannot support the distinction, nothing is accused. That
+    loses genuine fabrications under such label styles, which is the intended
+    trade: a missed finding is recoverable, a false compliance failure is not.
+    Callers wanting accusation for a bare-word scheme can supply a stricter
+    :attr:`CitationCorrectnessScorer.citation_pattern`, which makes the grammar
+    distinguishable by construction.
+    """
+    if not blocks:
+        return False
+    return all(
+        any(separator in label for separator in _LABEL_SEPARATORS)
+        for label, _ in blocks.values()
+    )
+
+
 def _is_fabrication_candidate(
     citation: _Citation,
     label_signatures: set[tuple[bool, bool, bool]],
+    labels_distinguishable: bool,
 ) -> bool:
     """Is this marker close enough to a real source id to be accused of naming one?
 
-    A bracketed token only counts as a fabrication candidate when it resembles
-    the labels this context actually uses. The comparison is against the parsed
-    labels rather than a fixed rule, so a context whose sources are labelled
-    ``[TODO]`` would make ``[TODO]`` a legitimate citation.
+    A bracketed token only counts as a fabrication candidate when the context's
+    label grammar can support the distinction at all (see
+    :func:`_labels_are_distinguishable`) *and* the marker resembles the labels
+    that grammar produces. The comparison is against the parsed labels rather
+    than a fixed rule, so a context whose sources are labelled ``[doc-1]`` treats
+    ``[doc-2]`` as a plausible citation.
 
     Markdown-link text never qualifies. ``[Wikipedia](https://...)`` names a link
     target, not a retrieved source, and confirming that a URL supports a claim is
     a different problem from the one this scorer solves.
     """
+    if not labels_distinguishable:
+        return False
     if citation.from_link:
         return False
     return _marker_signature(citation.marker) in label_signatures
@@ -512,19 +564,28 @@ def _extract_citations(
     asides such as ``[sic]`` are dropped, as is any bracketed text containing
     spaces. Original casing is preserved so reports show what the model wrote.
     """
-    seen: set[str] = set()
-    citations: list[_Citation] = []
+    order: list[str] = []
+    display: dict[str, str] = {}
+    from_link: dict[str, bool] = {}
     for match in citation_pattern.finditer(output):
         marker = match.group(1)
         key = marker.lower()
-        if key in _EDITORIAL_MARKERS or key in seen:
+        if key in _EDITORIAL_MARKERS:
             continue
-        seen.add(key)
         groups = match.groups()
-        citations.append(
-            _Citation(marker=marker, from_link=len(groups) > 1 and bool(groups[1]))
-        )
-    return citations
+        is_link = len(groups) > 1 and bool(groups[1])
+        if key not in display:
+            order.append(key)
+            display[key] = marker
+        # Collapsed across every occurrence rather than taken from the first, so
+        # classification does not depend on the order the forms appear in. A
+        # marker written as a link anywhere is treated as a link throughout:
+        # mixed forms are weak evidence of a citation attempt, and the
+        # conservative reading is the one that declines to accuse.
+        from_link[key] = from_link.get(key, False) or is_link
+    return [
+        _Citation(marker=display[key], from_link=from_link[key]) for key in order
+    ]
 
 
 def _resolve_citations(
@@ -557,6 +618,7 @@ def _resolve_citations(
     """
     inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
     label_signatures = {_marker_signature(label) for label, _ in blocks.values()}
+    distinguishable = _labels_are_distinguishable(blocks)
     resolved: list[str] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
@@ -567,7 +629,7 @@ def _resolve_citations(
             resolved.append(citation.marker)
         elif key in inline:
             ambiguous.append(citation.marker)
-        elif _is_fabrication_candidate(citation, label_signatures):
+        elif _is_fabrication_candidate(citation, label_signatures, distinguishable):
             fabricated.append(citation.marker)
         else:
             ignored.append(citation.marker)
@@ -796,6 +858,20 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                     ),
                     details=details,
                     assessed=True,
+                )
+            # Only when labels exist but lack structure. An unlabelled context
+            # is a different situation and keeps the generic reason below.
+            if blocks and not _labels_are_distinguishable(blocks):
+                return self._unassessed(
+                    "unsupported_label_style",
+                    "Un-assessed: the retrieved context labels its sources in a "
+                    "form that cannot be told apart from ordinary bracketed "
+                    "text, so a citation naming no source cannot be "
+                    "distinguished from an incidental bracket. Configure a "
+                    "stricter citation pattern to assess this label style.",
+                    fabricated=fabricated,
+                    ambiguous=ambiguous,
+                    ignored=ignored,
                 )
             return self._unassessed(
                 "unresolved_citations",
