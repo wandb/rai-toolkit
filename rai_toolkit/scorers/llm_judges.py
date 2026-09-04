@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from typing import Any
 
 from openai import OpenAI
@@ -425,25 +426,63 @@ class GroundednessScorer(LLMJudgeScorer):
 
 
 
+# A label only counts at the start of a line, so bracketed text inside a
+# passage is never mistaken for a new chunk boundary. Character set matches
+# the source-id style the reference RAG apps emit (e.g. "general-disclaimer").
+_SOURCE_LABEL_PATTERN = re.compile(
+    r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\]\s*", re.MULTILINE
+)
+
+
+def _split_context_chunks(context: str) -> list[str]:
+    """Split retrieved context into chunks under the toolkit's context contract.
+
+    Chunks are line-start ``[source-id] text`` blocks, the format the
+    toolkit's reference RAG apps emit (see ``demo_app/finance_advisor.py``).
+    A context with no line-start labels falls back to literal ``---``
+    delimiters. Blank blocks are dropped either way.
+    """
+    text = context or ""
+    matches = list(_SOURCE_LABEL_PATTERN.finditer(text))
+    if matches:
+        chunks: list[str] = []
+        for position, match in enumerate(matches):
+            end = (
+                matches[position + 1].start()
+                if position + 1 < len(matches)
+                else len(text)
+            )
+            block = text[match.start() : end].strip()
+            if block:
+                chunks.append(block)
+        return chunks
+    return [c for c in text.split("---") if c.strip()]
+
+
 class RetrievalRelevanceScorer(LLMJudgeScorer):
     """Judge whether each retrieved context chunk is relevant to the user query.
 
-    Designed for RAG retrieval quality evaluation. The context string is expected
-    to contain multiple chunks separated by "---". The judge assigns a per-chunk
-    relevance verdict and an overall retrieval quality score on the 0-3 compliance
-    scale, then normalizes to 0-1.
+    Designed for RAG retrieval quality evaluation. Chunks follow the toolkit's
+    context contract: line-start ``[source-id] text`` blocks, the format the
+    reference RAG apps emit, with literal ``---`` delimiters accepted as a
+    fallback for unlabeled contexts. The judge assigns a per-chunk relevance
+    verdict and the scorer derives the overall 0-3 score from the validated
+    verdicts, then normalizes to 0-1.
 
-    The chunk count is taken from the context itself (split on "---"), not from
-    the judge. Verdicts that are not dicts, carry a duplicate or out-of-range
-    ``chunk_index``, or use an unrecognized relevance label are discarded and
-    reported in ``details["discarded_verdicts"]``. If any real chunk lacks a
-    verdict, or the judge's overall score is not a finite 0-3 number, the row
-    returns ``assessed=False`` with ``skipped="judge_parse_failure"`` rather
-    than a silent pass.
+    The chunk count is taken from the context itself, not from the judge.
+    Verdicts that are not dicts, carry a duplicate or out-of-range
+    ``chunk_index``, a non-integer ``chunk_index``, or an unrecognized
+    relevance label are discarded and reported in
+    ``details["discarded_verdicts"]``. If any real chunk lacks a verdict, the
+    row returns ``assessed=False`` with ``skipped="judge_parse_failure"``
+    rather than a silent pass. The judge's own overall score is advisory and
+    recorded in ``details["judge_score"]``; the returned score always follows
+    the validated verdicts.
 
-    Rows without retrieved context (including delimiter-only context) or with
-    a blank query return ``assessed=False``. Behavioral-refusal rows are also
-    skipped, matching the convention of FactualityJudge and GroundednessScorer.
+    Rows without retrieved context or with a blank query return
+    ``assessed=False``. Refusal-shaped rows are still assessed: this scorer
+    grades the retriever, and retrieved context remains gradable even when
+    the generator declines to answer.
     """
 
     name = "RetrievalRelevanceScorer"
@@ -458,30 +497,11 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
         context: str = "",
         **kwargs: Any,
     ) -> ScorerResult:
-        expected = str(kwargs.get("expected") or "")
-        if _is_behavioral_refusal_expected(expected):
-            return ScorerResult(
-                score=0.0,
-                passed=False,
-                category=self.category,
-                explanation=(
-                    "Un-assessed: this row expects refusal or boundary-setting "
-                    "behavior, not a retrieval quality signal. RetrievalRelevanceScorer "
-                    "does not evaluate behavioral rows; use the relevant privacy/"
-                    "security/safety scorer instead."
-                ),
-                details={
-                    "skipped": "behavioral_refusal_expected",
-                    "scorer_name": self.name,
-                    "judge_model": self.model,
-                },
-                assessed=False,
-            )
         # Count chunks off the real context, not off the judge's verdict list:
         # the scorer and the judge must agree on what was actually retrieved.
-        # A context that is only delimiters (e.g. "---") yields zero real
-        # chunks and is treated the same as no context at all.
-        chunks = [c for c in (context or "").split("---") if c.strip()]
+        # A context that is only delimiters yields zero real chunks and is
+        # treated the same as no context at all.
+        chunks = _split_context_chunks(context)
         if not chunks:
             return ScorerResult(
                 score=0.0,
@@ -521,35 +541,18 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
         user_prompt = self._format_prompt(output=output, input=input, context=context)
         result = self._call_judge(prompts["system"], user_prompt)
 
-        # The overall score must be a finite number on the 0-3 scale. The
-        # string "NaN" survives float() as nan and "high" raises; both mean
-        # the judge response cannot be trusted.
+        # The judge's own overall score is advisory only; keep it for the
+        # details report but never let it drive the metric.
         try:
-            raw_score = float(result.get("score", 0))
+            judge_score: float | None = float(result.get("score"))
         except (TypeError, ValueError):
-            raw_score = float("nan")
-        if not math.isfinite(raw_score) or not 0 <= raw_score <= 3:
-            return ScorerResult(
-                score=0.0,
-                passed=False,
-                category=self.category,
-                explanation=(
-                    "Un-assessed: the judge's overall score is not a finite "
-                    "0-3 number. Inspect details.judge_response to see what "
-                    "the judge returned."
-                ),
-                details={
-                    "skipped": "judge_parse_failure",
-                    "scorer_name": self.name,
-                    "judge_model": self.model,
-                    "judge_response": result,
-                    "total_chunks": len(chunks),
-                },
-                assessed=False,
-            )
+            judge_score = None
+        if judge_score is not None and not math.isfinite(judge_score):
+            judge_score = None
 
         # Keep only verdicts we can trust: dicts with a unique in-range
-        # integer chunk_index and a recognized label. Anything else is
+        # integer chunk_index (bools, floats, and numeric strings are
+        # rejected, not coerced) and a recognized label. Anything else is
         # discarded and counted, and a real chunk with no verdict is a parse
         # failure -- a silent judge must never read as perfect retrieval.
         recognized_labels = ("relevant", "partially_relevant", "irrelevant")
@@ -561,11 +564,11 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 if not isinstance(verdict, dict):
                     discarded_verdicts += 1
                     continue
-                try:
-                    index = int(verdict.get("chunk_index"))
-                except (TypeError, ValueError):
+                raw_index = verdict.get("chunk_index")
+                if isinstance(raw_index, bool) or not isinstance(raw_index, int):
                     discarded_verdicts += 1
                     continue
+                index = raw_index
                 if (
                     index in valid_verdicts
                     or not 0 <= index < len(chunks)
@@ -599,7 +602,31 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        normalized = ScoreNormalizer.from_compliance_scale(raw_score)
+        # Derive the overall score from the validated verdicts instead of
+        # trusting the judge's own number: the two can contradict, and the
+        # verdicts are what we just validated. The weighing rule mirrors the
+        # prompt: a partially_relevant chunk counts as half a relevant one,
+        # every chunk effectively relevant scores 3, most of them scores 2,
+        # at most half scores 1, and none scores 0.
+        relevant_count = sum(
+            1 for v in valid_verdicts.values() if v.get("relevance") == "relevant"
+        )
+        partial_count = sum(
+            1
+            for v in valid_verdicts.values()
+            if v.get("relevance") == "partially_relevant"
+        )
+        effective_ratio = (relevant_count + 0.5 * partial_count) / len(chunks)
+        if effective_ratio <= 0:
+            derived_score = 0
+        elif effective_ratio >= 1:
+            derived_score = 3
+        elif effective_ratio > 0.5:
+            derived_score = 2
+        else:
+            derived_score = 1
+
+        normalized = ScoreNormalizer.from_compliance_scale(derived_score)
         chunk_verdicts = [
             {
                 "chunk_index": index,
@@ -608,9 +635,6 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
             }
             for index in sorted(valid_verdicts)
         ]
-        relevant_count = sum(
-            1 for v in chunk_verdicts if v["relevance"] == "relevant"
-        )
 
         return ScorerResult(
             score=normalized,
@@ -619,13 +643,14 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
             explanation=str(result.get("explanation", "")),
             details={
                 "scorer_name": self.name,
-                "raw_score": raw_score,
+                "raw_score": derived_score,
                 "max_score": 3,
                 "judge_model": self.model,
                 "chunk_verdicts": chunk_verdicts,
                 "relevant_chunks": relevant_count,
                 "total_chunks": len(chunks),
                 "discarded_verdicts": discarded_verdicts,
+                "judge_score": judge_score,
             },
         )
 

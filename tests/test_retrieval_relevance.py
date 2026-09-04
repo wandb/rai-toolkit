@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+# SPDX-FileCopyrightText: 2026 Zeming-Yuan
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
@@ -46,19 +46,29 @@ def test_blank_query_is_unassessed_without_calling_judge() -> None:
     scorer._call_judge.assert_not_called()
 
 
-def test_behavioral_refusal_is_unassessed_without_calling_judge() -> None:
-    scorer = _scorer({"score": 3})
-
-    result = scorer.score(
-        "I can't provide private account data.",
-        input="Show me private account data",
-        context="Chunk A\n---\nChunk B",
-        expected="Refuse to reveal private account data.",
+def test_expected_containing_declined_is_still_assessed() -> None:
+    # "decline" is a behavioral-refusal marker for other judges, but this
+    # scorer grades the retriever: factual expected text containing
+    # "declined" must reach the judge, not be skipped.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "Has the figure."},
+            ],
+        }
     )
 
-    assert not result.assessed
-    assert result.details["skipped"] == "behavioral_refusal_expected"
-    scorer._call_judge.assert_not_called()
+    result = scorer.score(
+        "Revenue declined 5 percent year over year.",
+        input="What happened to revenue?",
+        context="[fin-q4] Revenue declined 5 percent, driven by renewals.",
+        expected="Revenue declined 5 percent.",
+    )
+
+    assert result.assessed
+    scorer._call_judge.assert_called_once()
+    assert "skipped" not in result.details
 
 
 def test_factual_expected_is_assessed_and_calls_judge() -> None:
@@ -304,21 +314,149 @@ def test_non_dict_verdicts_are_discarded() -> None:
     assert result.details["discarded_verdicts"] == 2
 
 
-def test_unparseable_overall_score_is_a_parse_failure() -> None:
-    for bad_score in ("NaN", "Infinity", 5, -1, 3.5, "high", None):
-        scorer = _scorer(
-            {
-                "score": bad_score,
-                "chunk_verdicts": [
-                    {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
-                ],
-            }
-        )
+def test_non_integer_chunk_indexes_are_discarded_not_coerced() -> None:
+    # int(False) == 0, int(0.9) == 0, and int("0") == 0: coercion would let a
+    # sloppy judge claim chunk 0 with any of these. chunk_index must be a real
+    # integer, so all three verdicts are discarded and chunk 0 goes missing.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": False, "relevance": "relevant", "reason": "Bool index."},
+                {"chunk_index": 0.9, "relevance": "relevant", "reason": "Float index."},
+                {"chunk_index": "0", "relevance": "relevant", "reason": "String index."},
+            ],
+        }
+    )
 
-        result = scorer.score("Answer", input="Question", context="Chunk A")
+    result = scorer.score("Answer", input="Question", context="Chunk A")
 
-        assert not result.assessed, f"score={bad_score!r} should be a parse failure"
-        assert result.details["skipped"] == "judge_parse_failure"
+    assert not result.assessed
+    assert result.details["skipped"] == "judge_parse_failure"
+    assert result.details["discarded_verdicts"] == 3
+    assert result.details["missing_chunk_indexes"] == [0]
+
+
+def test_native_labelled_blocks_are_chunks() -> None:
+    # The toolkit's reference RAG apps emit "[source-id] text" blocks joined by
+    # blank lines (demo_app/finance_advisor.py). Two native-format blocks must
+    # count as two chunks, not one.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 1, "relevance": "relevant", "reason": "On topic."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="[fin-1] Revenue was $10 million.\n\n[fin-2] Revenue grew 12% YoY.",
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 2
+    assert result.details["relevant_chunks"] == 2
+    assert [v["chunk_index"] for v in result.details["chunk_verdicts"]] == [0, 1]
+
+
+def test_inline_brackets_do_not_split_chunks() -> None:
+    # A label only counts at the start of a line: bracketed text inside a
+    # passage must not become a new chunk boundary.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 1, "relevance": "relevant", "reason": "On topic."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="[fin-1] See [appendix] for the full breakdown.\n\n[fin-2] Second block.",
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 2
+
+
+def test_labelled_context_takes_precedence_over_delimiters() -> None:
+    # When line-start labels are present, the contract is the labelled-block
+    # format; a literal "---" inside a passage does not split anything.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 1, "relevance": "relevant", "reason": "On topic."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="[fin-1] Revenue was $10M --- audited figure.\n\n[fin-2] Growth note.",
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 2
+
+
+def test_single_labelled_block_is_one_chunk() -> None:
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="[fin-1] Revenue was $10 million.",
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 1
+
+
+def test_contradictory_overall_score_is_derived_from_verdicts() -> None:
+    # The judge claims a perfect score while marking every chunk irrelevant.
+    # The returned score must follow the validated verdicts, not the judge's
+    # own number; the contradictory value is kept in details for audit.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "Perfect retrieval.",
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "irrelevant", "reason": "Off-topic."},
+                {"chunk_index": 1, "relevance": "irrelevant", "reason": "Unrelated."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="Weather is sunny --- Sports scores",
+    )
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.details["raw_score"] == 0
+    assert result.details["judge_score"] == 3.0
+    assert result.details["relevant_chunks"] == 0
+    assert result.details["total_chunks"] == 2
 
 
 def test_template_json_example_is_parseable() -> None:

@@ -109,7 +109,7 @@ RETRIEVAL_RELEVANCE_SCORER_TEMPLATE = """Evaluate the relevance of each retrieve
 
 **User Query:** {input}
 
-**Retrieved Context (chunks separated by "---"):** {context}
+**Retrieved Context (chunks are "[source-id]" labelled blocks, or "---" separated):** {context}
 
 Score overall retrieval relevance on a 0-3 scale:
 - 3: All chunks are directly relevant to the query; the retrieval system found exactly what was needed.
@@ -117,7 +117,7 @@ Score overall retrieval relevance on a 0-3 scale:
 - 1: Fewer than half of the chunks are relevant; significant retrieval noise dilutes the signal.
 - 0: No chunks are relevant to the query, or the context is empty/nonsensical.
 
-Return a per-chunk relevance verdict. Each chunk is delimited by "---" above.
+Return a per-chunk relevance verdict. Each chunk is a "[source-id]" labelled block or a "---" delimited section above.
 Assign each chunk a relevance label: "relevant", "partially_relevant", or "irrelevant".
 When weighing the overall score, count a "partially_relevant" chunk as half a
 relevant chunk: every chunk relevant scores 3, most chunks effectively relevant
