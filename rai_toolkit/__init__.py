@@ -28,7 +28,7 @@ from rai_toolkit.redteam import AttackRunner, RedTeamReport, ATTACK_CATALOG
 from rai_toolkit.examples import ExampleDescriptor, ExampleRegistry
 from rai_toolkit.assessment import Assessor, AssessmentResult
 
-__version__ = "0.1.0"
+from rai_toolkit._version import __version__
 
 __all__ = [
     "BaseScorer",
