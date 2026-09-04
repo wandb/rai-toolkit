@@ -321,16 +321,19 @@ def test_fabricated_citation_floors_the_score_over_the_judge() -> None:
     assert result.details["raw_score"] == 3.0
 
 
-def test_ambiguous_markers_are_recorded_but_do_not_floor() -> None:
+def test_ambiguous_markers_are_recorded_and_block_a_complete_assessment() -> None:
+    # An ambiguous marker is a plausible citation this scorer could not grade,
+    # so the row has only been partly assessed and must not report as complete.
+    # It is still not an accusation: nothing is marked fabricated.
     output = "Notices are required [adverse-action]; see also [reg-b]."
     scorer = _covering_scorer(output, CONTEXT)
 
     result = scorer.score(output, context=CONTEXT)
 
+    assert not result.assessed
+    assert result.details["skipped"] == "partial_citation_coverage"
     assert result.details["ambiguous_citations"] == ["reg-b"]
     assert result.details["fabricated_citations"] == []
-    assert not result.details["floor_applied"]
-    assert result.score == 1.0
 
 
 # --- prompt assembly -------------------------------------------------------
@@ -996,3 +999,111 @@ def test_incomplete_verdicts_are_named_in_the_coverage_report() -> None:
     assert (
         _classify_unassessed_reason(result) == "the judge did not assess every citation"
     )
+
+
+# --- review #27 round 2, item 3: partial resolution must not report complete ---
+
+
+def test_partly_resolved_row_is_unassessed() -> None:
+    # source-b appears only inside source-a's block, so it is ambiguous and never
+    # reaches the judge. Grading source-a and reporting the row as complete gave
+    # a confident result for a citation nobody assessed.
+    context = (
+        "[source-a] Guidance about lending. See also [source-b] for detail.\n\n"
+        "[other-block] Unrelated passage."
+    )
+    output = "Per [source-a] and [source-b]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "partial_citation_coverage"
+    assert result.details["ambiguous_citations"] == ["source-b"]
+    assert "source-b" in result.explanation
+
+
+def test_ignored_markers_do_not_block_a_complete_assessment() -> None:
+    # Control, and the reason "any unresolved citation" cannot mean every
+    # non-resolved bucket: an ignored marker was determined not to be a citation,
+    # so treating it as blocking would undo the stray-bracket fix.
+    output = "Notices are required for denied applicants [adverse-action]. See arr[0]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == 1.0
+    assert result.details["ignored_markers"] == ["0"]
+
+
+def test_a_fabrication_still_fails_rather_than_going_unassessed() -> None:
+    # Ambiguity must not downgrade a proven failure into a coverage gap.
+    context = "[fair-lending] Lending rules. See also [reg-b] for detail."
+    output = "Per [fair-lending], [reg-b], and [reg-z-2024]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+def test_partial_coverage_is_named_in_the_coverage_report() -> None:
+    output = "Notices are required [adverse-action]; see also [reg-b]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert (
+        _classify_unassessed_reason(result)
+        == "only some of the response's citations could be resolved"
+    )
+
+
+# --- review #27 round 2, item 4: the floor must explain itself ---
+
+
+def test_floor_explanation_names_the_fabricated_sources() -> None:
+    # The floor produced score 0 with the judge's text saying the response was
+    # fully supported, so the verdict and its stated reason disagreed.
+    output = "Lending uses creditworthiness [fair-lending]. Rates capped [reg-z-2024]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "The real citation is fully supported.",
+            "supported_citations": [
+                {
+                    "marker": "fair-lending",
+                    "response_span": "Lending uses creditworthiness",
+                    "context_span": "Lending decisions must use creditworthiness",
+                }
+            ],
+            "misattributed_citations": [],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.details["floor_applied"]
+    assert "reg-z-2024" in result.explanation
+    assert "absent from the retrieved context" in result.explanation
+    # The judge's own words are kept, after the deterministic finding.
+    assert "The real citation is fully supported." in result.explanation
+    assert (
+        result.details["judge_explanation"] == "The real citation is fully supported."
+    )
+
+
+def test_unfloored_rows_keep_the_judge_explanation_unchanged() -> None:
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.details["floor_applied"]
+    assert result.explanation == "The cited blocks support their claims."
+    assert "absent from the retrieved context" not in result.explanation
