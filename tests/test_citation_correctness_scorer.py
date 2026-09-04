@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
+import json
 import re
 from unittest.mock import Mock
 
@@ -22,9 +23,14 @@ CONTEXT = (
 )
 
 
-def _scorer(result: dict[str, object] | None = None) -> CitationCorrectnessScorer:
+_UNSET = object()
+
+
+def _scorer(result: object = _UNSET) -> CitationCorrectnessScorer:
+    # A sentinel rather than ``result or {}``: falsy replies such as None and []
+    # are exactly the non-object cases some tests need to deliver.
     scorer = CitationCorrectnessScorer(api_key="test")
-    scorer._call_judge = Mock(return_value=result or {})
+    scorer._call_judge = Mock(return_value={} if result is _UNSET else result)
     return scorer
 
 
@@ -298,19 +304,12 @@ def test_misattributed_citation_fails_and_names_the_real_source() -> None:
 
 
 def test_fabricated_citation_floors_the_score_over_the_judge() -> None:
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "The resolved citation checks out.",
-            "supported_citations": [],
-            "misattributed_citations": [],
-        }
-    )
+    # The judge must actually cover the resolved citation, otherwise the row is
+    # rejected for incomplete verdicts before the floor is ever reached.
+    output = "Notices are required [adverse-action]. Rates are capped at 8% [reg-z-2024]."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    result = scorer.score(
-        "Notices are required [adverse-action]. Rates are capped at 8% [reg-z-2024].",
-        context=CONTEXT,
-    )
+    result = scorer.score(output, context=CONTEXT)
 
     assert result.assessed
     assert result.score == 0.0
@@ -891,7 +890,7 @@ def test_unusable_judge_score_is_unassessed(score: object, reason: str) -> None:
     result = scorer.score(output, context=CONTEXT)
 
     assert not result.assessed, reason
-    assert result.details["skipped"] == "invalid_judge_score"
+    assert result.details["skipped"] == "invalid_judge_output"
 
 
 def test_valid_scores_across_the_rubric_are_accepted() -> None:
@@ -971,7 +970,9 @@ def test_a_proven_fabrication_still_fails_when_judge_output_is_unusable() -> Non
     assert result.score == 0.0
     assert not result.passed
     assert result.details["floor_applied"]
-    assert result.details["judge_output_rejected"] == "invalid_judge_score"
+    assert result.details["judge_output_rejected"] == "invalid_judge_output"
+    assert result.details["raw_score"] is None
+    assert result.details["rejected_raw_score"] == "NaN"
     assert result.details["fabricated_citations"] == ["reg-z-2024"]
 
 
@@ -985,7 +986,7 @@ def test_unusable_judge_output_is_named_in_the_coverage_report() -> None:
 
     result = scorer.score(output, context=CONTEXT)
 
-    assert _classify_unassessed_reason(result) == "the judge returned an unusable score"
+    assert _classify_unassessed_reason(result) == "the judge returned unusable output"
 
 
 def test_incomplete_verdicts_are_named_in_the_coverage_report() -> None:
@@ -1236,3 +1237,68 @@ def test_a_label_shaped_marker_inside_a_passage_is_still_ambiguous() -> None:
 
     assert result.details["ambiguous_citations"] == ["reg-b"]
     assert result.details["fabricated_citations"] == []
+
+
+# --- review #27 round 3, finding 5: judge reply validation and serialization ---
+
+
+@pytest.mark.parametrize("score", [True, False])
+def test_json_booleans_are_rejected_as_scores(score: bool) -> None:
+    # bool subclasses int, so float(True) is 1.0 and a JSON true was accepted as
+    # a rubric score of 1.
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "score": score,
+    }
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "invalid_judge_output"
+
+
+@pytest.mark.parametrize("reply", [None, [], "a string", 3])
+def test_non_object_judge_replies_are_unassessed(reply: object) -> None:
+    # Valid JSON has a non-object top level for null or [], and reading a score
+    # off one raised instead of producing a controlled result.
+    scorer = _scorer(reply)
+
+    result = scorer.score(
+        "Notices are required for denied applicants [adverse-action].", context=CONTEXT
+    )
+
+    assert not result.assessed
+    assert result.details["skipped"] == "invalid_judge_output"
+    assert "not a JSON object" in result.explanation
+
+
+def test_rejected_values_stay_json_serializable() -> None:
+    # NaN in details["raw_score"] leaked non-standard JSON into reports.
+    output = "Notices required [adverse-action]. Rates capped [reg-z-2024]."
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        scorer = _covering_scorer(output, CONTEXT)
+        scorer._call_judge.return_value = {
+            **scorer._call_judge.return_value,
+            "score": bad,
+        }
+
+        result = scorer.score(output, context=CONTEXT)
+
+        assert result.details["raw_score"] is None
+        assert result.details["rejected_raw_score"] == repr(bad)
+        json.dumps(result.details, allow_nan=False)
+
+
+def test_every_unassessed_result_is_json_serializable() -> None:
+    # Guards the whole family, not just the deterministic path.
+    cases = [
+        ("Nothing cited here at all.", CONTEXT),
+        ("Notices are required [1] and [2].", CONTEXT),
+        ("Per [source-a].", "[source-a]\n[source-b] Other text."),
+        ("Per [docs].", "[docs](https://example.com) A markdown link."),
+    ]
+    for output, context in cases:
+        result = _covering_scorer(output, context).score(output, context=context)
+        json.dumps(result.details, allow_nan=False)
