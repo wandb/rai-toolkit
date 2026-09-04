@@ -1029,21 +1029,53 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 ignored=ignored,
             )
 
+        # An ambiguous marker is a plausible citation this scorer could not grade,
+        # so a row containing one has only been partly assessed. ``assessed`` is
+        # a binary field with no partial state, and aggregating a partial result
+        # as complete is what lets a row report confidence it has not earned.
+        # Ignored markers do not count: those were determined not to be citations
+        # at all, so a code sample alongside real citations still scores.
+        if ambiguous and not fabricated:
+            return self._unassessed(
+                "partial_citation_coverage",
+                "Un-assessed: "
+                f"{', '.join(ambiguous)} could not be resolved to a labelled "
+                "source, so only some of the response's citations were graded. "
+                "A partly assessed row is not reported as a complete one.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+            )
+
         raw_score = score_value
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
 
         # A citation naming a source absent from the context is established in
         # Python, so it is not left to the judge to weigh. The judge's own score
         # is preserved in details rather than overwritten.
+        judge_explanation = str(result.get("explanation", ""))
+        explanation = judge_explanation
         floor_applied = bool(fabricated)
         if floor_applied:
             normalized = 0.0
+            # The judge is not told the outcome, so its text can read as a pass
+            # while the row fails. The deterministic finding leads, and the
+            # judge's own words follow rather than being dropped.
+            explanation = (
+                "Cited sources are absent from the retrieved context: "
+                f"{', '.join(fabricated)}."
+            )
+            if judge_explanation:
+                explanation += (
+                    " Judge assessment of the remaining citations: "
+                    f"{judge_explanation}"
+                )
 
         return ScorerResult(
             score=normalized,
             passed=ScoreNormalizer.apply_threshold(normalized, self.threshold),
             category=self.category,
-            explanation=str(result.get("explanation", "")),
+            explanation=explanation,
             details={
                 "scorer_name": self.name,
                 "raw_score": raw_score,
@@ -1055,6 +1087,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 "fabricated_citations": fabricated,
                 "ambiguous_citations": ambiguous,
                 "ignored_markers": ignored,
+                "judge_explanation": judge_explanation,
                 "discarded_evidence_spans": raw_evidence_count
                 - len(supported)
                 - len(misattributed),

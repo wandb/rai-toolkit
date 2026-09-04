@@ -1430,6 +1430,8 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "the judge returned an unusable score"
     if "skipped" in details and details["skipped"] == "incomplete_judge_verdicts":
         return "the judge did not assess every citation"
+    if "skipped" in details and details["skipped"] == "partial_citation_coverage":
+        return "only some of the response's citations could be resolved"
     if "refusal/boundary" in explanation or "refusal or boundary" in explanation:
         return "behavioral/refusal row"
     if "no grounding context" in explanation or "no context" in explanation:
