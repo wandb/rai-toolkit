@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rai-toolkit"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Production-grade Responsible AI toolkit with compliance mapping, evaluation, and guardrails"
 readme = "README.md"
 license = "Apache-2.0"
@@ -93,6 +93,9 @@ Issues = "https://github.com/wandb/rai-toolkit/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rai_toolkit", "integrations"]
+
+[tool.hatch.version]
+path = "rai_toolkit/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = [

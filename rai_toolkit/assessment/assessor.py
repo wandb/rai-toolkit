@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from rai_toolkit import _tracing
+from rai_toolkit._version import __version__
 from rai_toolkit.compliance.engine import ComplianceMappingEngine
 from rai_toolkit.compliance.frameworks import ComplianceProfile, Framework
 from rai_toolkit.examples import ExampleRegistry
@@ -116,7 +117,7 @@ class AssessmentResult:
     weave_trace_url: str | None = None
     weave_call_id: str | None = None
     weave_project: str | None = None
-    toolkit_version: str = "0.1.0"
+    toolkit_version: str = __version__
     evaluation_backend: str = "rai_pipeline"
     weave_evaluation_summary: dict[str, Any] | None = None
     cost_estimate: dict[str, Any] | None = None

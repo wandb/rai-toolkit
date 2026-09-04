@@ -4,6 +4,8 @@
 
 """Responsible AI Toolkit: Production-grade RAI evaluation, compliance, and guardrails."""
 
+from rai_toolkit._version import __version__
+
 try:
     from dotenv import find_dotenv, load_dotenv
 
@@ -28,9 +30,8 @@ from rai_toolkit.redteam import AttackRunner, RedTeamReport, ATTACK_CATALOG
 from rai_toolkit.examples import ExampleDescriptor, ExampleRegistry
 from rai_toolkit.assessment import Assessor, AssessmentResult
 
-__version__ = "0.1.0"
-
 __all__ = [
+    "__version__",
     "BaseScorer",
     "ScorerResult",
     "BaseModel",

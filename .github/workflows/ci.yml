@@ -148,5 +148,5 @@ jobs:
           python -m venv /tmp/rai-toolkit-wheel-smoke
           /tmp/rai-toolkit-wheel-smoke/bin/python -m pip install dist/*.whl
           cd /tmp
-          /tmp/rai-toolkit-wheel-smoke/bin/python -c "import rai_toolkit; print(rai_toolkit.__version__)"
+          /tmp/rai-toolkit-wheel-smoke/bin/python -c "from importlib.metadata import version; import rai_toolkit; assert rai_toolkit.__version__ == version('rai-toolkit'); print(rai_toolkit.__version__)"
           /tmp/rai-toolkit-wheel-smoke/bin/python -m pip check
