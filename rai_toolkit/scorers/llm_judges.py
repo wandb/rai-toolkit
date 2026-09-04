@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from typing import Any
 
 from openai import OpenAI
@@ -179,6 +180,30 @@ class LLMJudgeScorer(BaseScorer):
         result = self._call_judge(prompts["system"], user_prompt)
 
         raw_score = float(result.get("score", 0))
+        if not math.isfinite(raw_score):
+            logger.warning(
+                "Judge %s returned a non-finite score (%s); marking un-assessed",
+                self.name,
+                raw_score,
+            )
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge returned a non-finite score "
+                    f"({raw_score})."
+                ),
+                details={
+                    "skipped": "non_finite_judge_score",
+                    "scorer_name": self.name,
+                    "raw_score": raw_score,
+                    "max_score": 3,
+                    "judge_model": self.model,
+                    "judge_response": result,
+                },
+                assessed=False,
+            )
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
         passed = ScoreNormalizer.apply_threshold(normalized, self.threshold)
 
@@ -388,6 +413,31 @@ class GroundednessScorer(LLMJudgeScorer):
         user_prompt = self._format_prompt(output=output, input=input, context=context)
         result = self._call_judge(prompts["system"], user_prompt)
         raw_score = float(result.get("score", 0))
+        if not math.isfinite(raw_score):
+            logger.warning(
+                "Judge %s returned a non-finite score (%s); marking un-assessed",
+                self.name,
+                raw_score,
+            )
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge returned a non-finite score "
+                    f"({raw_score})."
+                ),
+                details={
+                    "skipped": "non_finite_judge_score",
+                    "scorer_name": self.name,
+                    "raw_score": raw_score,
+                    "max_score": 3,
+                    "judge_model": self.model,
+                    "supporting_spans": [],
+                    "contradicting_spans": [],
+                },
+                assessed=False,
+            )
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
         raw_supporting = result.get("supporting_spans")
         raw_contradicting = result.get("contradicting_spans")
