@@ -38,15 +38,13 @@ def _covering_judge(
     output: str,
     context: str,
     score: int = 3,
-    supported: list | None = None,
-    misattributed: list | None = None,
+    verdicts: list | None = None,
 ) -> dict:
-    """A judge reply that returns a verifiable verdict for every resolved marker.
+    """A judge reply returning a verifiable verdict for every resolved occurrence.
 
-    Coverage is required before a row can be assessed, so a fixture returning an
-    empty verdict list is now un-assessed rather than scored. Spans are taken
-    verbatim from the row so they survive verification: the block body for the
-    context span, and the opening of the response for the response span.
+    Verdicts are keyed by occurrence number, so two claims citing the same source
+    each need their own. Spans are taken verbatim from the cited block so they
+    survive verification.
     """
     blocks = _parse_source_blocks(context)
     resolved, _, _, _ = _resolve_citations(
@@ -55,16 +53,15 @@ def _covering_judge(
     return {
         "score": score,
         "explanation": "The cited blocks support their claims.",
-        "supported_citations": [
+        "verdicts": [
             {
-                "marker": marker,
-                "response_span": output[:10],
-                "context_span": blocks[marker.lower()][1],
+                "occurrence": citation.index,
+                "outcome": "supported",
+                "context_span": blocks[citation.marker.lower()][1],
             }
-            for marker in resolved
+            for citation in resolved
         ]
-        + list(supported or []),
-        "misattributed_citations": list(misattributed or []),
+        + list(verdicts or []),
     }
 
 
@@ -130,10 +127,18 @@ def test_editorial_and_spaced_brackets_are_not_citations() -> None:
     assert _extract_citations(output) == []
 
 
-def test_markers_are_deduplicated_preserving_first_casing() -> None:
-    output = "See [Fair-Lending] and again [fair-lending] and [FAIR-LENDING]."
+def test_repeated_markers_are_separate_occurrences() -> None:
+    # Occurrences are no longer collapsed: two claims citing one source are two
+    # things to verify, and a single verdict must not cover both.
+    output = "Alpha [Fair-Lending]. Beta [fair-lending]. Gamma [FAIR-LENDING]."
 
-    assert [c.marker for c in _extract_citations(output)] == ["Fair-Lending"]
+    citations = _extract_citations(output)
+
+    assert [(c.index, c.marker, c.claim) for c in citations] == [
+        (1, "Fair-Lending", "Alpha"),
+        (2, "fair-lending", "Beta"),
+        (3, "FAIR-LENDING", "Gamma"),
+    ]
 
 
 # --- three-tier resolution -------------------------------------------------
@@ -146,7 +151,7 @@ def test_resolution_sorts_markers_into_three_tiers() -> None:
         _extract_citations("[adverse-action] [reg-b] [reg-z-2024]"), blocks, CONTEXT
     )
 
-    assert resolved == ["adverse-action"]
+    assert [c.marker for c in resolved] == ["adverse-action"]
     # Bracketed in the context but not a block label: our parsing is the likely
     # culprit, so the response is not accused of inventing it.
     assert ambiguous == ["reg-b"]
@@ -162,7 +167,7 @@ def test_resolution_is_case_insensitive() -> None:
         _extract_citations("[Fair-Lending]"), blocks, CONTEXT
     )
 
-    assert resolved == ["Fair-Lending"]  # original casing preserved
+    assert [c.marker for c in resolved] == ["Fair-Lending"]  # casing preserved
     assert fabricated == []
 
 
@@ -248,14 +253,13 @@ def test_supported_citation_scores_full_and_keeps_marker() -> None:
         {
             "score": 3,
             "explanation": "The cited block supports the claim.",
-            "supported_citations": [
+            "verdicts": [
                 {
-                    "marker": "adverse-action",
-                    "response_span": "Notices are required for denied applicants",
+                    "occurrence": 1,
+                    "outcome": "supported",
                     "context_span": "notices are required for denied applicants",
                 }
             ],
-            "misattributed_citations": [],
         }
     )
 
@@ -270,8 +274,11 @@ def test_supported_citation_scores_full_and_keeps_marker() -> None:
     assert not result.details["floor_applied"]
     assert result.details["supported_citations"] == [
         {
+            "occurrence": 1,
             "marker": "adverse-action",
-            "response_span": "Notices are required for denied applicants",
+            "outcome": "supported",
+            "claim": "Notices are required for denied applicants",
+            "supporting_marker": "adverse-action",
             "context_span": "notices are required for denied applicants",
         }
     ]
@@ -282,11 +289,11 @@ def test_misattributed_citation_fails_and_names_the_real_source() -> None:
         {
             "score": 1,
             "explanation": "The claim belongs to the adverse-action block.",
-            "supported_citations": [],
-            "misattributed_citations": [
+            "verdicts": [
                 {
-                    "marker": "fair-lending",
-                    "response_span": "Notices are required for denied applicants",
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "adverse-action",
                     "context_span": "Adverse-action notices are required",
                 }
             ],
@@ -370,14 +377,13 @@ def test_overridden_patterns_are_actually_used() -> None:
         return_value={
             "score": 3,
             "explanation": "ok",
-            "supported_citations": [
+            "verdicts": [
                 {
-                    "marker": "fair-lending",
-                    "response_span": "Creditworthiness matters",
+                    "occurrence": 1,
+                    "outcome": "supported",
                     "context_span": "Lending decisions must use creditworthiness",
                 }
             ],
-            "misattributed_citations": [],
         }
     )
 
@@ -632,10 +638,10 @@ def test_extra_unverifiable_evidence_is_discarded_but_still_scores() -> None:
     scorer = _covering_scorer(
         output,
         CONTEXT,
-        supported=[
+        verdicts=[
             {
-                "marker": "adverse-action",
-                "response_span": "Notices are required",
+                "occurrence": 1,
+                "outcome": "supported",
                 "context_span": "a passage the judge invented",
             }
         ],
@@ -655,14 +661,13 @@ def test_evidence_for_a_cited_block_is_still_accepted() -> None:
         {
             "score": 3,
             "explanation": "ok",
-            "supported_citations": [
+            "verdicts": [
                 {
-                    "marker": "adverse-action",
-                    "response_span": "Notices are required for denied applicants",
+                    "occurrence": 1,
+                    "outcome": "supported",
                     "context_span": "notices are required for denied applicants",
                 }
             ],
-            "misattributed_citations": [],
         }
     )
 
@@ -693,10 +698,11 @@ def test_prompt_scopes_the_judge_to_resolved_citations() -> None:
     )
 
     prompt = scorer._call_judge.call_args.args[1]
-    assert "**Grade only these citations:** [adverse-action]" in prompt
+    scope = prompt.split("**Citations to grade:**")[1]
+    assert "[adverse-action]" in scope
     # The ambiguous marker and the array index must not be offered for grading.
-    assert "[reg-b]" not in prompt.split("**Grade only these citations:**")[1]
-    assert "[0]" not in prompt.split("**Grade only these citations:**")[1]
+    assert "[reg-b]" not in scope
+    assert "[0]" not in scope
 
 
 def test_scope_block_is_absent_when_nothing_is_graded() -> None:
@@ -704,7 +710,7 @@ def test_scope_block_is_absent_when_nothing_is_graded() -> None:
 
     prompt = scorer._format_prompt(output="o", input="i", context=CONTEXT)
 
-    assert "Grade only these citations" not in prompt
+    assert "Citations to grade" not in prompt
     # The JSON example's escaped braces survived both formatting passes.
     assert '"score": <0-3>' in prompt
 
@@ -716,11 +722,11 @@ def test_scope_and_fabricated_blocks_can_both_appear() -> None:
         output="o",
         input="i",
         context=CONTEXT,
-        resolved="[adverse-action]",
+        resolved="  1. [adverse-action] - claim: 'x'",
         fabricated="[reg-z-2024]",
     )
 
-    assert "**Grade only these citations:** [adverse-action]" in prompt
+    assert "[adverse-action]" in prompt.split("**Citations to grade:**")[1]
     assert "verified as fabricated" in prompt
     assert '"score": <0-3>' in prompt
 
@@ -820,9 +826,9 @@ def test_extraction_collapses_link_form_across_occurrences() -> None:
         "[fake-id](https://x/y) then [fake-id]",
         "[fake-id] then [fake-id](https://x/y)",
     ):
-        (citation,) = _extract_citations(output)
-        assert citation.marker == "fake-id"
-        assert citation.from_link is True
+        citations = _extract_citations(output)
+        assert len(citations) == 2
+        assert all(c.from_link for c in citations)
 
 
 # --- review #27 round 2, item 7/8: empty and duplicate blocks ---
@@ -893,10 +899,31 @@ def test_unusable_judge_score_is_unassessed(score: object, reason: str) -> None:
     assert result.details["skipped"] == "invalid_judge_output"
 
 
-def test_valid_scores_across_the_rubric_are_accepted() -> None:
+def test_valid_scores_within_the_implied_band_are_accepted() -> None:
+    # The band comes from the verified outcomes: all supported allows 3 or 2, a
+    # misattribution allows 1 or 0. A score outside its band is a contradiction.
     output = "Notices are required for denied applicants [adverse-action]."
-    for raw, expected in ((3, 1.0), ("2", 2 / 3), (1, 1 / 3), (0, 0.0)):
+    for raw, expected in ((3, 1.0), ("2", 2 / 3)):
         scorer = _covering_scorer(output, CONTEXT, score=raw)
+        result = scorer.score(output, context=CONTEXT)
+        assert result.assessed
+        assert result.score == pytest.approx(expected)
+
+    for raw, expected in ((1, 1 / 3), (0, 0.0)):
+        scorer = _scorer(
+            {
+                "score": raw,
+                "explanation": "Attributed to the wrong block.",
+                "verdicts": [
+                    {
+                        "occurrence": 1,
+                        "outcome": "misattributed",
+                        "supporting_marker": "fair-lending",
+                        "context_span": "Lending decisions must use creditworthiness",
+                    }
+                ],
+            }
+        )
         result = scorer.score(output, context=CONTEXT)
         assert result.assessed
         assert result.score == pytest.approx(expected)
@@ -910,14 +937,13 @@ def test_verdict_missing_for_a_resolved_citation_is_unassessed() -> None:
         {
             "score": 3,
             "explanation": "Looks fine.",
-            "supported_citations": [
+            "verdicts": [
                 {
-                    "marker": "fair-lending",
-                    "response_span": "Lending uses creditworthiness",
+                    "occurrence": 1,
+                    "outcome": "supported",
                     "context_span": "Lending decisions must use creditworthiness",
                 }
             ],
-            "misattributed_citations": [],
         }
     )
 
@@ -936,11 +962,11 @@ def test_a_misattributed_verdict_counts_as_covering_a_citation() -> None:
         {
             "score": 1,
             "explanation": "Attributed to the wrong block.",
-            "supported_citations": [],
-            "misattributed_citations": [
+            "verdicts": [
                 {
-                    "marker": "fair-lending",
-                    "response_span": "Notices are required for denied applicants",
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "adverse-action",
                     "context_span": "Adverse-action notices are required",
                 }
             ],
@@ -1074,14 +1100,13 @@ def test_floor_explanation_names_the_fabricated_sources() -> None:
         {
             "score": 3,
             "explanation": "The real citation is fully supported.",
-            "supported_citations": [
+            "verdicts": [
                 {
-                    "marker": "fair-lending",
-                    "response_span": "Lending uses creditworthiness",
+                    "occurrence": 1,
+                    "outcome": "supported",
                     "context_span": "Lending decisions must use creditworthiness",
                 }
             ],
-            "misattributed_citations": [],
         }
     )
 
@@ -1302,3 +1327,232 @@ def test_every_unassessed_result_is_json_serializable() -> None:
     for output, context in cases:
         result = _covering_scorer(output, context).score(output, context=context)
         json.dumps(result.details, allow_nan=False)
+
+
+# --- review #27 round 3, findings 1 and 4: occurrences and verdict coherence ---
+
+
+def test_two_claims_citing_one_source_each_need_their_own_verdict() -> None:
+    # One verified verdict used to cover both, so an unsupported claim passed on
+    # its neighbour's evidence.
+    output = "Claim one is true [adverse-action]. Claim two is false [adverse-action]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+
+
+def test_two_claims_citing_one_source_pass_when_both_are_verdicted() -> None:
+    # Control: the legitimate case must still score. Two occurrences of one
+    # marker are not a contradiction.
+    output = "Notices are required [adverse-action]. Deadlines apply [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == 1.0
+    assert len(result.details["supported_citations"]) == 2
+
+
+def test_claims_are_bound_to_their_own_citation() -> None:
+    # The judge no longer supplies the response span, so it cannot attach one
+    # citation's claim to another. Each verdict carries the derived claim.
+    output = "Alpha claim [fair-lending]. Beta claim [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    claims = {v["marker"]: v["claim"] for v in result.details["supported_citations"]}
+    assert claims == {"fair-lending": "Alpha claim", "adverse-action": "Beta claim"}
+
+
+def test_contradictory_verdicts_for_one_occurrence_are_rejected() -> None:
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "context_span": "Adverse-action notices are required",
+                },
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "fair-lending",
+                    "context_span": "Lending decisions must use creditworthiness",
+                },
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "contradictory_judge_verdicts"
+
+
+def test_a_score_that_contradicts_its_own_verdicts_is_rejected() -> None:
+    # A verified misattribution alongside a score of 3 returned a full pass.
+    output = "Notices are required for denied applicants [fair-lending]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "adverse-action",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "judge_score_contradicts_verdicts"
+
+
+def test_misattribution_evidence_from_the_cited_block_is_rejected() -> None:
+    # Misattribution means the claim is supported elsewhere. Evidence from the
+    # block that was cited proves the opposite and used to be accepted, because
+    # the span was verified against the whole context.
+    output = "Notices are required for denied applicants [adverse-action]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "adverse-action",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+
+
+def test_misattribution_names_the_source_that_does_support_the_claim() -> None:
+    output = "Notices are required for denied applicants [fair-lending]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "Attributed to the wrong block.",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "adverse-action",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.score == pytest.approx(1 / 3)
+    verdict = result.details["misattributed_citations"][0]
+    assert verdict["marker"] == "fair-lending"
+    assert verdict["supporting_marker"] == "adverse-action"
+
+
+def test_a_verdict_for_an_unknown_supporting_marker_is_discarded() -> None:
+    output = "Notices are required for denied applicants [fair-lending]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "no-such-block",
+                    "context_span": "Adverse-action notices are required",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+
+
+def test_the_prompt_numbers_each_occurrence_with_its_claim() -> None:
+    output = "Alpha claim [fair-lending]. Beta claim [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    scope = scorer._call_judge.call_args.args[1].split("**Citations to grade:**")[1]
+    assert "1. [fair-lending]" in scope
+    assert "Alpha claim" in scope
+    assert "2. [adverse-action]" in scope
+    assert "Beta claim" in scope
+
+
+def test_new_judge_failures_are_named_in_the_coverage_report() -> None:
+    output = "Notices are required for denied applicants [adverse-action]."
+    contradictory = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {"occurrence": 1, "outcome": "supported",
+                 "context_span": "Adverse-action notices are required"},
+                {"occurrence": 1, "outcome": "misattributed",
+                 "supporting_marker": "fair-lending",
+                 "context_span": "Lending decisions must use creditworthiness"},
+            ],
+        }
+    ).score(output, context=CONTEXT)
+    disagreeing = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {"occurrence": 1, "outcome": "misattributed",
+                 "supporting_marker": "fair-lending",
+                 "context_span": "Lending decisions must use creditworthiness"},
+            ],
+        }
+    ).score("Notices are required for denied applicants [adverse-action].", context=CONTEXT)
+
+    assert (
+        _classify_unassessed_reason(contradictory)
+        == "the judge returned conflicting outcomes for one citation"
+    )
+    assert (
+        _classify_unassessed_reason(disagreeing)
+        == "the judge score disagreed with its own verdicts"
+    )
