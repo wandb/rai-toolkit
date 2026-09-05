@@ -313,9 +313,10 @@ CITATION_CORRECTNESS_TEMPLATE = """Grade whether each cited claim is supported b
 
 **AI Response:** {output}
 
-Each numbered citation below pairs a claim from the Response with the source it
-attributes that claim to. The claim text is given to you; do not re-derive it.
-Decide, for each one, whether the named block supports that claim. A claim
+Every citation in the Response is tagged with its occurrence number, written
+immediately after the marker as \u27e6n\u27e7. Read the Response normally; the tags
+identify which citation each verdict refers to. For each numbered citation,
+decide whether the block it names supports the claim it is attached to. A claim
 supported somewhere else in the Context but attributed to the wrong block is
 **misattributed**, not supported.
 
@@ -329,14 +330,16 @@ Return exactly one verdict per numbered citation. Evidence spans must be copied
 verbatim from the Context; do not paraphrase or use outside knowledge. For a
 misattributed citation, name the block that *actually* supports the claim in
 `supporting_marker` and quote from that block, not from the one that was cited.
+Quote the claim you graded in `claim_span`, copied verbatim from the Response
+without its occurrence tag.
 
 Respond in JSON format:
 {{
   "score": <0-3>,
   "explanation": "<brief evidence-based reasoning>",
   "verdicts": [
-    {{"occurrence": <number>, "outcome": "supported", "context_span": "<exact text from the cited block>"}},
-    {{"occurrence": <number>, "outcome": "misattributed", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}}
+    {{"occurrence": <number>, "outcome": "supported", "claim_span": "<exact claim text from the Response>", "context_span": "<exact text from the cited block>"}},
+    {{"occurrence": <number>, "outcome": "misattributed", "claim_span": "<exact claim text from the Response>", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}}
   ]
 }}"""
 

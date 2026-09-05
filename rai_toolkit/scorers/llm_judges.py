@@ -444,6 +444,11 @@ _EDITORIAL_MARKERS = frozenset({"sic", "ibid", "ed", "nb"})
 # in step with the character class of _CITATION_PATTERN.
 _LABEL_SEPARATORS = ("-", ".", "_")
 
+# Occurrence tags shown to the judge. Chosen so the citation pattern cannot
+# match them: it requires an alphanumeric immediately after "[".
+_OCCURRENCE_OPEN = "\u27e6"
+_OCCURRENCE_CLOSE = "\u27e7"
+
 # Upper bound of the judge rubric, shared by validation and reporting.
 _JUDGE_SCORE_MAX = 3.0
 
@@ -500,23 +505,23 @@ def _parse_source_blocks(
 
 
 class _Citation(NamedTuple):
-    """One citation occurrence: a marker, and the claim it is attached to.
+    """One citation occurrence: a marker, and where it sits in the response.
 
     The unit is the occurrence rather than the marker. Two claims citing the same
     source are two things to verify, and collapsing them let a single verdict
     carry both, so an unsupported claim passed on its neighbour's evidence.
 
-    ``claim`` is derived from the marker's position rather than supplied by the
-    judge. When the judge chose the span, verification could only confirm the
-    text appeared somewhere in the response, so swapping the spans of two
-    citations still verified. Deriving it here makes mis-association impossible
-    rather than merely detectable.
+    ``start`` and ``end`` locate the marker so the occurrence can be annotated
+    in place. The claim itself is deliberately not derived here: slicing text
+    between markers truncated mid-sentence citations to a fragment, and a
+    citation opening a sentence produced no claim at all.
     """
 
     marker: str
     from_link: bool
     index: int
-    claim: str
+    start: int
+    end: int
 
 
 def _marker_signature(marker: str) -> tuple[bool, ...]:
@@ -591,12 +596,9 @@ def _extract_citations(
 ) -> list[_Citation]:
     """Return every citation occurrence in the response, in order.
 
-    Occurrences are *not* de-duplicated: each is a separate claim to verify. The
-    claim carried by an occurrence is the text between the previous citation and
-    this one, trimmed of the punctuation that separated them.
-
+    Occurrences are *not* de-duplicated: each is a separate claim to verify.
     Editorial asides such as ``[sic]`` are dropped, as is any bracketed text
-    containing spaces. The markdown-link flag is still collapsed across every
+    containing spaces. The markdown-link flag is collapsed across every
     occurrence of a marker, so classification does not depend on the order the
     forms appear in.
     """
@@ -609,23 +611,39 @@ def _extract_citations(
     for match in matches:
         groups = match.groups()
         key = match.group(1).lower()
-        is_link = len(groups) > 1 and bool(groups[1])
-        from_link[key] = from_link.get(key, False) or is_link
-
-    citations: list[_Citation] = []
-    claim_start = 0
-    for position, match in enumerate(matches, start=1):
-        claim = output[claim_start : match.start()].strip().lstrip(".,;:!?").strip()
-        citations.append(
-            _Citation(
-                marker=match.group(1),
-                from_link=from_link[match.group(1).lower()],
-                index=position,
-                claim=claim,
-            )
+        from_link[key] = from_link.get(key, False) or (
+            len(groups) > 1 and bool(groups[1])
         )
-        claim_start = match.end()
-    return citations
+    return [
+        _Citation(
+            marker=match.group(1),
+            from_link=from_link[match.group(1).lower()],
+            index=position,
+            start=match.start(),
+            end=match.end(),
+        )
+        for position, match in enumerate(matches, start=1)
+    ]
+
+
+def _annotate_occurrences(output: str, citations: list[_Citation]) -> str:
+    """Tag each citation in the response with its occurrence number.
+
+    The judge reads the response as written, with an occurrence number attached
+    to each marker, and answers per number. Binding a verdict to a citation is
+    therefore positional and exact, without this scorer having to decide where a
+    claim begins or ends. Deriving that boundary truncated mid-sentence
+    citations and emptied ones that opened a sentence, so the judge would have
+    been grading a fragment.
+    """
+    annotated: list[str] = []
+    cursor = 0
+    for citation in citations:
+        annotated.append(output[cursor : citation.end])
+        annotated.append(f"{_OCCURRENCE_OPEN}{citation.index}{_OCCURRENCE_CLOSE}")
+        cursor = citation.end
+    annotated.append(output[cursor:])
+    return "".join(annotated)
 
 
 def _resolve_citations(
@@ -735,6 +753,7 @@ def _verified_verdicts(
     raw_verdicts: Any,
     resolved: list[_Citation],
     blocks: dict[str, tuple[str, str]],
+    output: str,
 ) -> tuple[dict[int, dict[str, Any]], list[int], int]:
     """Verify at most one outcome per resolved occurrence.
 
@@ -749,6 +768,11 @@ def _verified_verdicts(
       ``supporting_marker``. Evidence drawn from the cited block proves the claim
       is supported by what was cited, the opposite of misattribution, and was
       accepted before because the span was checked against the whole context.
+
+    ``claim_span`` is advisory. It is recorded when it quotes the response
+    verbatim, because a report reads better naming the claim than an index, but
+    it never binds the verdict: the occurrence number does that, and it is
+    attached to the marker in the text the judge was given.
     """
     by_index = {citation.index: citation for citation in resolved}
     verified: dict[int, dict[str, Any]] = {}
@@ -787,11 +811,15 @@ def _verified_verdicts(
         if index in verified:
             contradictory.append(index)
             continue
+        raw_claim = item.get("claim_span")
+        claim = (
+            _verbatim_span(raw_claim, output) if isinstance(raw_claim, str) else None
+        )
         verified[index] = {
             "occurrence": index,
             "marker": citation.marker,
             "outcome": outcome,
-            "claim": citation.claim,
+            "claim": claim or "",
             "supporting_marker": source,
             "context_span": checked,
         }
@@ -1026,11 +1054,11 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
 
         prompts = self._get_prompts()
         user_prompt = self._format_prompt(
-            output=output,
+            output=_annotate_occurrences(output, resolved),
             input=input,
             context=context,
             resolved="\n".join(
-                f"  {c.index}. [{c.marker}] - claim: {c.claim!r}" for c in resolved
+                f"  {c.index}. [{c.marker}]" for c in resolved
             ),
             fabricated=", ".join(f"[{marker}]" for marker in fabricated),
         )
@@ -1050,7 +1078,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             )
 
         verified, contradictory, raw_verdict_count = _verified_verdicts(
-            result.get("verdicts"), resolved, blocks
+            result.get("verdicts"), resolved, blocks, output
         )
         unverified = [c.marker for c in resolved if c.index not in verified]
         outcomes = [v["outcome"] for v in verified.values()]
