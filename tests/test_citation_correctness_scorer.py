@@ -57,6 +57,8 @@ def _covering_judge(
             {
                 "occurrence": citation.index,
                 "outcome": "supported",
+                "claim_span": output[: citation.start].strip().lstrip(".,;:!?").strip()
+                or output[:8],
                 "context_span": blocks[citation.marker.lower()][1],
             }
             for citation in resolved
@@ -134,10 +136,10 @@ def test_repeated_markers_are_separate_occurrences() -> None:
 
     citations = _extract_citations(output)
 
-    assert [(c.index, c.marker, c.claim) for c in citations] == [
-        (1, "Fair-Lending", "Alpha"),
-        (2, "fair-lending", "Beta"),
-        (3, "FAIR-LENDING", "Gamma"),
+    assert [(c.index, c.marker) for c in citations] == [
+        (1, "Fair-Lending"),
+        (2, "fair-lending"),
+        (3, "FAIR-LENDING"),
     ]
 
 
@@ -257,6 +259,7 @@ def test_supported_citation_scores_full_and_keeps_marker() -> None:
                 {
                     "occurrence": 1,
                     "outcome": "supported",
+                    "claim_span": "Notices are required for denied applicants",
                     "context_span": "notices are required for denied applicants",
                 }
             ],
@@ -1369,16 +1372,58 @@ def test_two_claims_citing_one_source_pass_when_both_are_verdicted() -> None:
     assert len(result.details["supported_citations"]) == 2
 
 
-def test_claims_are_bound_to_their_own_citation() -> None:
-    # The judge no longer supplies the response span, so it cannot attach one
-    # citation's claim to another. Each verdict carries the derived claim.
+def test_a_mis_quoted_claim_cannot_move_a_verdict() -> None:
+    # claim_span is advisory: the occurrence number binds the verdict, so even a
+    # swapped quote cannot attach one citation's claim to another citation.
     output = "Alpha claim [fair-lending]. Beta claim [adverse-action]."
-    scorer = _covering_scorer(output, CONTEXT)
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "Beta claim",
+                    "context_span": "Lending decisions must use creditworthiness",
+                },
+                {
+                    "occurrence": 2,
+                    "outcome": "supported",
+                    "claim_span": "Alpha claim",
+                    "context_span": "Adverse-action notices are required",
+                },
+            ],
+        }
+    )
 
     result = scorer.score(output, context=CONTEXT)
 
-    claims = {v["marker"]: v["claim"] for v in result.details["supported_citations"]}
-    assert claims == {"fair-lending": "Alpha claim", "adverse-action": "Beta claim"}
+    markers = [v["marker"] for v in result.details["supported_citations"]]
+    assert markers == ["fair-lending", "adverse-action"]
+
+
+def test_a_fabricated_claim_span_is_discarded_but_keeps_the_verdict() -> None:
+    output = "Alpha claim [fair-lending]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "a claim the judge invented",
+                    "context_span": "Lending decisions must use creditworthiness",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.details["supported_citations"][0]["claim"] == ''
 
 
 def test_contradictory_verdicts_for_one_occurrence_are_rejected() -> None:
@@ -1508,17 +1553,20 @@ def test_a_verdict_for_an_unknown_supporting_marker_is_discarded() -> None:
     assert result.details["skipped"] == "incomplete_judge_verdicts"
 
 
-def test_the_prompt_numbers_each_occurrence_with_its_claim() -> None:
-    output = "Alpha claim [fair-lending]. Beta claim [adverse-action]."
+def test_the_prompt_tags_each_occurrence_in_the_response() -> None:
+    # The judge reads the response as written, with occurrence numbers attached
+    # to the markers, so no claim boundary has to be guessed.
+    output = "The rule [fair-lending] requires notices. Deadlines apply [adverse-action]."
     scorer = _covering_scorer(output, CONTEXT)
 
     scorer.score(output, context=CONTEXT)
 
-    scope = scorer._call_judge.call_args.args[1].split("**Citations to grade:**")[1]
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "The rule [fair-lending]\u27e61\u27e7 requires notices." in prompt
+    assert "Deadlines apply [adverse-action]\u27e62\u27e7." in prompt
+    scope = prompt.split("**Citations to grade:**")[1]
     assert "1. [fair-lending]" in scope
-    assert "Alpha claim" in scope
     assert "2. [adverse-action]" in scope
-    assert "Beta claim" in scope
 
 
 def test_new_judge_failures_are_named_in_the_coverage_report() -> None:
