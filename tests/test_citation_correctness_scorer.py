@@ -1705,3 +1705,26 @@ def test_a_non_string_explanation_is_not_carried_into_the_report(
     assert result.assessed
     assert result.explanation == ""
     assert result.details["judge_explanation"] == ""
+
+
+def test_gradeable_citations_are_numbered_contiguously() -> None:
+    # Numbering counted every bracketed token, so a response opening with
+    # arr[0] presented its only real citation as occurrence 2, with no
+    # occurrence 1 anywhere in the prompt.
+    context = (
+        "[fair-lending] Use arr[0] to index the schedule.\n\n"
+        "[adverse-action] Notices are required."
+    )
+    output = "Index with arr[0] per [fair-lending]. Also [TODO] and [adverse-action]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "[fair-lending]⟦1⟧" in prompt
+    assert "[adverse-action]⟦2⟧" in prompt
+    # Non-citations consume no number and carry no tag.
+    assert "arr[0]⟦" not in prompt
+    assert "[TODO]⟦" not in prompt
+    assert [v["occurrence"] for v in result.details["supported_citations"]] == [1, 2]
+    assert result.details["ignored_markers"] == ["0", "TODO"]
