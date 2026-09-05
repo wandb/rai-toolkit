@@ -1604,3 +1604,79 @@ def test_new_judge_failures_are_named_in_the_coverage_report() -> None:
         _classify_unassessed_reason(disagreeing)
         == "the judge score disagreed with its own verdicts"
     )
+
+
+# --- adversarial sweep: cases found by probing rather than reported ---
+
+
+def test_occurrence_tags_already_in_the_response_are_stripped() -> None:
+    # A response containing the tag characters produced two identical tags, so
+    # the judge could bind a verdict to a sequence the model wrote itself.
+    output = "Alpha claim ⟦1⟧ is prior text [fair-lending]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "Alpha claim 1 is prior text [fair-lending]⟦1⟧." in prompt
+    assert prompt.count("⟦1⟧") == 1
+
+
+@pytest.mark.parametrize("occurrence", [True, False, 1.0, "1", None])
+def test_occurrence_must_be_a_real_integer(occurrence: object) -> None:
+    # bool subclasses int and 1.0 == 1, so either would index occurrence 1.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": occurrence,
+                    "outcome": "supported",
+                    "context_span": "Lending decisions must use creditworthiness",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score("Alpha claim [fair-lending].", context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+
+
+@pytest.mark.parametrize("span", ["e", "L", " ", ""])
+def test_a_single_character_is_not_evidence(span: str) -> None:
+    # One character occurs in almost any block, so it corroborates nothing.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {"occurrence": 1, "outcome": "supported", "context_span": span}
+            ],
+        }
+    )
+
+    result = scorer.score("Alpha claim [fair-lending].", context=CONTEXT)
+
+    assert not result.assessed
+
+
+def test_short_but_real_evidence_is_still_accepted() -> None:
+    # Control: the floor must not reject legitimate short quotes.
+    context = "[fair-lending] Rates rose 8% last year."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {"occurrence": 1, "outcome": "supported", "context_span": "8%"}
+            ],
+        }
+    )
+
+    result = scorer.score("Rates rose [fair-lending].", context=context)
+
+    assert result.assessed
+    assert result.score == 1.0
