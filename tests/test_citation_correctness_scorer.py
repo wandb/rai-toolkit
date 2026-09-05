@@ -1680,3 +1680,23 @@ def test_short_but_real_evidence_is_still_accepted() -> None:
 
     assert result.assessed
     assert result.score == 1.0
+
+
+@pytest.mark.parametrize("explanation", [{"a": 1}, [1, 2], 42, None, True])
+def test_a_non_string_explanation_is_not_carried_into_the_report(
+    explanation: object,
+) -> None:
+    # str() on the raw value put a Python repr into the report, so a reply of
+    # null read as the explanation "None".
+    output = "Alpha claim [fair-lending]."
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "explanation": explanation,
+    }
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.explanation == ""
+    assert result.details["judge_explanation"] == ""
