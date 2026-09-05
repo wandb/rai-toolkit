@@ -131,7 +131,10 @@ class ExampleRegistry:
             and ``category``.
         """
         desc = ExampleRegistry.get(slug)
-        n = limit if limit is not None else desc.default_limit
+        n = _validate_limit(limit if limit is not None else desc.default_limit)
+
+        if n == 0:
+            return []
 
         if desc.loader is not None:
             rows = desc.loader(n)
@@ -154,10 +157,10 @@ def _normalize_row(row: dict[str, Any], default_category: str) -> dict[str, Any]
     assessable for a row.
     """
     out: dict[str, Any] = {
-        "input_text": str(row.get("input_text") or row.get("question") or row.get("prompt") or ""),
-        "context": str(row.get("context") or row.get("passage") or ""),
-        "expected": str(row.get("expected") or row.get("answer") or row.get("label") or ""),
-        "category": str(row.get("category") or default_category),
+        "input_text": str(_first_present(row, "input_text", "question", "prompt", default="")),
+        "context": str(_first_present(row, "context", "passage", default="")),
+        "expected": str(_first_present(row, "expected", "answer", "label", default="")),
+        "category": str(_first_present(row, "category", default=default_category)),
     }
     rubrics = row.get("rubrics")
     if rubrics:
@@ -165,6 +168,22 @@ def _normalize_row(row: dict[str, Any], default_category: str) -> dict[str, Any]
     if "policy_expectations" in row:
         out["policy_expectations"] = row.get("policy_expectations")
     return out
+
+
+def _first_present(row: dict[str, Any], *keys: str, default: Any) -> Any:
+    """Return the first non-empty alias value without dropping valid falsy data."""
+    for key in keys:
+        value = row.get(key)
+        if value is not None and value != "":
+            return value
+    return default
+
+
+def _validate_limit(limit: Any) -> int:
+    """Validate a dataset row limit before dispatching to any loader."""
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
+        raise ValueError("limit must be a non-negative integer")
+    return limit
 
 
 def _load_example_file(filename: str, limit: int) -> list[dict[str, Any]]:
