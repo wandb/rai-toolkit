@@ -686,26 +686,31 @@ def test_evidence_for_a_cited_block_is_still_accepted() -> None:
 
 
 def test_prompt_scopes_the_judge_to_resolved_citations() -> None:
-    scorer = _scorer(
-        {
-            "score": 3,
-            "explanation": "ok",
-            "supported_citations": [],
-            "misattributed_citations": [],
-        }
-    )
+    # An ambiguous marker short-circuits before the judge is called, so the
+    # stray token here is an ignored one, which does still reach the prompt.
+    output = "Notices required [adverse-action]; see arr[0] in the sample."
+    scorer = _covering_scorer(output, CONTEXT)
 
-    scorer.score(
-        "Notices required [adverse-action]; see also [reg-b]; and arr[0].",
-        context=CONTEXT,
-    )
+    scorer.score(output, context=CONTEXT)
 
     prompt = scorer._call_judge.call_args.args[1]
     scope = prompt.split("**Citations to grade:**")[1]
     assert "[adverse-action]" in scope
-    # The ambiguous marker and the array index must not be offered for grading.
-    assert "[reg-b]" not in scope
+    # The array index is not a citation and must not be offered for grading.
     assert "[0]" not in scope
+
+
+def test_an_ambiguous_marker_is_not_billed_for_a_judge_call() -> None:
+    # Every other guard short-circuits before the API call; this one used to run
+    # after it, so the row paid for a verdict that was then discarded.
+    context = "[fair-lending] Lending rules. See also [reg-b] for detail."
+    scorer = _scorer()
+
+    result = scorer.score("Alpha claim [fair-lending] and [reg-b].", context=context)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "partial_citation_coverage"
+    scorer._call_judge.assert_not_called()
 
 
 def test_scope_block_is_absent_when_nothing_is_graded() -> None:
