@@ -256,7 +256,11 @@ def test_partial_verdict_coverage_is_a_parse_failure() -> None:
     assert result.details["discarded_verdicts"] == 0
 
 
-def test_duplicate_chunk_indexes_keep_the_first_verdict() -> None:
+def test_duplicate_chunk_indexes_are_a_parse_failure() -> None:
+    # Two verdicts for the same chunk make the chunk ambiguous; "first wins"
+    # would make the grade depend on the judge's verdict order (reversing the
+    # two index-0 verdicts flips a perfect pass into a one-third score), so
+    # the row is un-assessed instead of silently picking one.
     scorer = _scorer(
         {
             "score": 3,
@@ -270,11 +274,33 @@ def test_duplicate_chunk_indexes_keep_the_first_verdict() -> None:
 
     result = scorer.score("Answer", input="Question", context="Chunk A\n---\nChunk B")
 
-    assert result.assessed
-    assert result.details["relevant_chunks"] == 2  # the first verdict for chunk 0 wins
+    assert not result.assessed
+    assert result.details["skipped"] == "judge_parse_failure"
+    assert result.details["duplicate_chunk_indexes"] == [0]
     assert result.details["total_chunks"] == 2
+    assert "judge_response" in result.details
+
+
+def test_duplicate_with_unrecognized_label_is_still_a_parse_failure() -> None:
+    # A duplicated in-range index is ambiguous even when the second verdict's
+    # label is off-scale: either the label check or the order check decides,
+    # and both are judge noise rather than a graded chunk.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 0, "relevance": "kinda relevant", "reason": "Off-scale."},
+            ],
+        }
+    )
+
+    result = scorer.score("Answer", input="Question", context="Chunk A")
+
+    assert not result.assessed
+    assert result.details["skipped"] == "judge_parse_failure"
+    assert result.details["duplicate_chunk_indexes"] == [0]
     assert result.details["discarded_verdicts"] == 1
-    assert [v["chunk_index"] for v in result.details["chunk_verdicts"]] == [0, 1]
 
 
 def test_unknown_relevance_label_is_a_parse_failure() -> None:
@@ -386,6 +412,64 @@ def test_inline_brackets_do_not_split_chunks() -> None:
     assert result.details["total_chunks"] == 2
 
 
+def test_caller_context_before_labelled_blocks_is_not_a_chunk() -> None:
+    # The reference RAG apps can supply caller context ahead of the retrieved
+    # labelled blocks (demo_app/triage.py). That prefix is not a retrieved
+    # chunk: it must neither count as one nor reach the judge, or the judge's
+    # chunk indexes would shift relative to the chunks the scorer counts.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 1, "relevance": "relevant", "reason": "On topic."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context=(
+            "The year in review: revenue rose sharply across regions.\n\n"
+            "[fin-1] Revenue was $10 million.\n\n[fin-2] Revenue grew 12% YoY."
+        ),
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 2
+    judge_prompt = scorer._call_judge.call_args[0][1]
+    assert "The year in review" not in judge_prompt
+    assert "[fin-1] Revenue was $10 million." in judge_prompt
+    assert "[fin-2] Revenue grew 12% YoY." in judge_prompt
+
+
+def test_markdown_link_at_line_start_is_not_a_source_label() -> None:
+    # "[docs](https://example.com) useful material" starts a line with
+    # bracketed text but is a Markdown link, not a "[source-id]" label: the
+    # parser must not count it as one labelled chunk and discard the verdict
+    # for the second section. Both sections stay chunks.
+    scorer = _scorer(
+        {
+            "score": 3,
+            "chunk_verdicts": [
+                {"chunk_index": 0, "relevance": "relevant", "reason": "On topic."},
+                {"chunk_index": 1, "relevance": "irrelevant", "reason": "Unrelated."},
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "What is the revenue?",
+        input="What is the revenue?",
+        context="[docs](https://example.com) useful material\n---\nUnrelated chunk",
+    )
+
+    assert result.assessed
+    assert result.details["total_chunks"] == 2
+    assert result.details["discarded_verdicts"] == 0
+
+
 def test_labelled_context_takes_precedence_over_delimiters() -> None:
     # When line-start labels are present, the contract is the labelled-block
     # format; a literal "---" inside a passage does not split anything.
@@ -457,6 +541,12 @@ def test_contradictory_overall_score_is_derived_from_verdicts() -> None:
     assert result.details["judge_score"] == 3.0
     assert result.details["relevant_chunks"] == 0
     assert result.details["total_chunks"] == 2
+    # The shown explanation must follow the validated verdicts too: no
+    # "Perfect retrieval." when both chunks were judged irrelevant. The
+    # judge's own prose stays in details for audit.
+    assert "Perfect retrieval." not in result.explanation
+    assert "0 relevant" in result.explanation
+    assert result.details["judge_explanation"] == "Perfect retrieval."
 
 
 def test_template_json_example_is_parseable() -> None:

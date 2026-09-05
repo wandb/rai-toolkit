@@ -427,10 +427,13 @@ class GroundednessScorer(LLMJudgeScorer):
 
 
 # A label only counts at the start of a line, so bracketed text inside a
-# passage is never mistaken for a new chunk boundary. Character set matches
-# the source-id style the reference RAG apps emit (e.g. "general-disclaimer").
+# passage is never mistaken for a new chunk boundary, and whitespace (or end
+# of line) must follow the bracket so a Markdown link like
+# "[docs](https://example.com)" at the start of a line is never read as a
+# source label. Character set matches the source-id style the reference RAG
+# apps emit (e.g. "general-disclaimer").
 _SOURCE_LABEL_PATTERN = re.compile(
-    r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\]\s*", re.MULTILINE
+    r"^\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](?=\s|$)", re.MULTILINE
 )
 
 
@@ -440,7 +443,8 @@ def _split_context_chunks(context: str) -> list[str]:
     Chunks are line-start ``[source-id] text`` blocks, the format the
     toolkit's reference RAG apps emit (see ``demo_app/finance_advisor.py``).
     A context with no line-start labels falls back to literal ``---``
-    delimiters. Blank blocks are dropped either way.
+    delimiters. Blank blocks are dropped either way. Any text before the first
+    label (caller-supplied context, not a retrieved chunk) is dropped too.
     """
     text = context or ""
     matches = list(_SOURCE_LABEL_PATTERN.finditer(text))
@@ -459,6 +463,19 @@ def _split_context_chunks(context: str) -> list[str]:
     return [c for c in text.split("---") if c.strip()]
 
 
+def _render_context_chunks(chunks: list[str]) -> str:
+    """Render the parsed chunk sequence back into the context the judge sees.
+
+    The judge prompt must be built from the exact chunk sequence the scorer
+    grades: anything the parser dropped (e.g. text before the first labelled
+    block) must not reach the judge, or the judge's chunk indexes would shift
+    relative to the chunks the scorer counted. ``---`` is a valid separator
+    under either contract, so labelled and delimiter chunks both re-render
+    into the format the prompt describes.
+    """
+    return "\n---\n".join(chunks)
+
+
 class RetrievalRelevanceScorer(LLMJudgeScorer):
     """Judge whether each retrieved context chunk is relevant to the user query.
 
@@ -470,14 +487,21 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
     verdicts, then normalizes to 0-1.
 
     The chunk count is taken from the context itself, not from the judge.
-    Verdicts that are not dicts, carry a duplicate or out-of-range
-    ``chunk_index``, a non-integer ``chunk_index``, or an unrecognized
-    relevance label are discarded and reported in
-    ``details["discarded_verdicts"]``. If any real chunk lacks a verdict, the
-    row returns ``assessed=False`` with ``skipped="judge_parse_failure"``
-    rather than a silent pass. The judge's own overall score is advisory and
-    recorded in ``details["judge_score"]``; the returned score always follows
-    the validated verdicts.
+    Verdicts that are not dicts, carry an out-of-range ``chunk_index``, a
+    non-integer ``chunk_index``, or an unrecognized relevance label are
+    discarded and reported in ``details["discarded_verdicts"]``. A duplicated
+    ``chunk_index`` fails the parse (the chunk is ambiguous, so no verdict
+    order can be trusted) and the row is returned un-assessed with
+    ``skipped="judge_parse_failure"``. If any real chunk lacks a verdict, the
+    row is also un-assessed rather than silently passing. The judge's own
+    overall score is advisory and recorded in ``details["judge_score"]``; the
+    returned score always follows the validated verdicts, and the returned
+    explanation is derived from them too (``details["judge_explanation"]``
+    keeps the judge's prose for audit).
+
+    The judge prompt is rebuilt from the exact parsed chunk sequence, so text
+    before the first source label (caller-supplied context, not a retrieved
+    chunk) is neither counted nor shown to the judge.
 
     Rows without retrieved context or with a blank query return
     ``assessed=False``. Refusal-shaped rows are still assessed: this scorer
@@ -538,7 +562,14 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
             )
 
         prompts = self._get_prompts()
-        user_prompt = self._format_prompt(output=output, input=input, context=context)
+        # Rebuild the prompt from the exact parsed chunk sequence: text the
+        # parser dropped (e.g. caller context before the first label) must not
+        # reach the judge, or the judge's indexes would shift relative to the
+        # chunks the scorer counts.
+        parsed_context = _render_context_chunks(chunks)
+        user_prompt = self._format_prompt(
+            output=output, input=input, context=parsed_context
+        )
         result = self._call_judge(prompts["system"], user_prompt)
 
         # The judge's own overall score is advisory only; keep it for the
@@ -554,9 +585,14 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
         # integer chunk_index (bools, floats, and numeric strings are
         # rejected, not coerced) and a recognized label. Anything else is
         # discarded and counted, and a real chunk with no verdict is a parse
-        # failure -- a silent judge must never read as perfect retrieval.
+        # failure -- a silent judge must never read as perfect retrieval. A
+        # duplicated chunk_index is not a discard either: the chunk is
+        # ambiguous, so "first wins" (and the grade with it) would depend on
+        # the judge's verdict order.
         recognized_labels = ("relevant", "partially_relevant", "irrelevant")
         valid_verdicts: dict[int, dict[str, Any]] = {}
+        seen_indexes: set[int] = set()
+        duplicate_indexes: list[int] = []
         discarded_verdicts = 0
         raw_verdicts = result.get("chunk_verdicts")
         if isinstance(raw_verdicts, list):
@@ -569,14 +605,45 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                     discarded_verdicts += 1
                     continue
                 index = raw_index
-                if (
-                    index in valid_verdicts
-                    or not 0 <= index < len(chunks)
-                    or verdict.get("relevance") not in recognized_labels
-                ):
+                if not 0 <= index < len(chunks):
+                    discarded_verdicts += 1
+                    continue
+                # Every in-range index counts toward ambiguity, even a verdict
+                # that later fails the label check: chunk 0 judged twice is
+                # ambiguous whether the second label is recognizable or not.
+                if index in seen_indexes:
+                    duplicate_indexes.append(index)
+                    discarded_verdicts += 1
+                    continue
+                seen_indexes.add(index)
+                if verdict.get("relevance") not in recognized_labels:
                     discarded_verdicts += 1
                     continue
                 valid_verdicts[index] = verdict
+
+        if duplicate_indexes:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge returned more than one verdict for "
+                    "the same chunk. A duplicated chunk_index makes the chunk "
+                    "ambiguous; inspect details.judge_response to see what the "
+                    "judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": result,
+                    "total_chunks": len(chunks),
+                    "covered_chunks": len(valid_verdicts),
+                    "duplicate_chunk_indexes": sorted(set(duplicate_indexes)),
+                    "discarded_verdicts": discarded_verdicts,
+                },
+                assessed=False,
+            )
 
         missing_indexes = sorted(set(range(len(chunks))) - set(valid_verdicts))
         if missing_indexes:
@@ -635,12 +702,23 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
             }
             for index in sorted(valid_verdicts)
         ]
+        # The explanation must follow the validated verdicts, not the judge's
+        # prose: the two can contradict (a "Perfect retrieval." explanation with
+        # two irrelevant verdicts still scores 0). The judge's own explanation
+        # stays in details for audit.
+        irrelevant_count = len(chunks) - relevant_count - partial_count
+        explanation = (
+            f"{relevant_count} relevant, {partial_count} partially relevant, "
+            f"{irrelevant_count} irrelevant of {len(chunks)} chunk(s); derived "
+            f"score {derived_score}/3, normalized {normalized:.2f}, threshold "
+            f"{self.threshold}."
+        )
 
         return ScorerResult(
             score=normalized,
             passed=ScoreNormalizer.apply_threshold(normalized, self.threshold),
             category=self.category,
-            explanation=str(result.get("explanation", "")),
+            explanation=explanation,
             details={
                 "scorer_name": self.name,
                 "raw_score": derived_score,
@@ -651,6 +729,7 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 "total_chunks": len(chunks),
                 "discarded_verdicts": discarded_verdicts,
                 "judge_score": judge_score,
+                "judge_explanation": str(result.get("explanation", "")),
             },
         )
 
