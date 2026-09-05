@@ -447,6 +447,10 @@ _LABEL_SEPARATORS = ("-", ".", "_")
 # Upper bound of the judge rubric, shared by validation and reporting.
 _JUDGE_SCORE_MAX = 3.0
 
+# Rubric bands the verified outcomes must agree with.
+_MISATTRIBUTION_SCORE_MAX = 1.0
+_SUPPORTED_SCORE_MIN = 2.0
+
 
 def _parse_source_blocks(
     context: str,
@@ -496,10 +500,23 @@ def _parse_source_blocks(
 
 
 class _Citation(NamedTuple):
-    """A citation marker as written, plus whether it came from a markdown link."""
+    """One citation occurrence: a marker, and the claim it is attached to.
+
+    The unit is the occurrence rather than the marker. Two claims citing the same
+    source are two things to verify, and collapsing them let a single verdict
+    carry both, so an unsupported claim passed on its neighbour's evidence.
+
+    ``claim`` is derived from the marker's position rather than supplied by the
+    judge. When the judge chose the span, verification could only confirm the
+    text appeared somewhere in the response, so swapping the spans of two
+    citations still verified. Deriving it here makes mis-association impossible
+    rather than merely detectable.
+    """
 
     marker: str
     from_link: bool
+    index: int
+    claim: str
 
 
 def _marker_signature(marker: str) -> tuple[bool, ...]:
@@ -572,35 +589,43 @@ def _extract_citations(
     output: str,
     citation_pattern: re.Pattern[str] = _CITATION_PATTERN,
 ) -> list[_Citation]:
-    """Return the citation markers a response uses, in order, de-duplicated.
+    """Return every citation occurrence in the response, in order.
 
-    Handles bare ``[source-id]`` markers and the markdown-link form
-    ``[source-id](https://...)``, recording which form each came from. Editorial
-    asides such as ``[sic]`` are dropped, as is any bracketed text containing
-    spaces. Original casing is preserved so reports show what the model wrote.
+    Occurrences are *not* de-duplicated: each is a separate claim to verify. The
+    claim carried by an occurrence is the text between the previous citation and
+    this one, trimmed of the punctuation that separated them.
+
+    Editorial asides such as ``[sic]`` are dropped, as is any bracketed text
+    containing spaces. The markdown-link flag is still collapsed across every
+    occurrence of a marker, so classification does not depend on the order the
+    forms appear in.
     """
-    order: list[str] = []
-    display: dict[str, str] = {}
-    from_link: dict[str, bool] = {}
-    for match in citation_pattern.finditer(output):
-        marker = match.group(1)
-        key = marker.lower()
-        if key in _EDITORIAL_MARKERS:
-            continue
-        groups = match.groups()
-        is_link = len(groups) > 1 and bool(groups[1])
-        if key not in display:
-            order.append(key)
-            display[key] = marker
-        # Collapsed across every occurrence rather than taken from the first, so
-        # classification does not depend on the order the forms appear in. A
-        # marker written as a link anywhere is treated as a link throughout:
-        # mixed forms are weak evidence of a citation attempt, and the
-        # conservative reading is the one that declines to accuse.
-        from_link[key] = from_link.get(key, False) or is_link
-    return [
-        _Citation(marker=display[key], from_link=from_link[key]) for key in order
+    matches = [
+        match
+        for match in citation_pattern.finditer(output)
+        if match.group(1).lower() not in _EDITORIAL_MARKERS
     ]
+    from_link: dict[str, bool] = {}
+    for match in matches:
+        groups = match.groups()
+        key = match.group(1).lower()
+        is_link = len(groups) > 1 and bool(groups[1])
+        from_link[key] = from_link.get(key, False) or is_link
+
+    citations: list[_Citation] = []
+    claim_start = 0
+    for position, match in enumerate(matches, start=1):
+        claim = output[claim_start : match.start()].strip().lstrip(".,;:!?").strip()
+        citations.append(
+            _Citation(
+                marker=match.group(1),
+                from_link=from_link[match.group(1).lower()],
+                index=position,
+                claim=claim,
+            )
+        )
+        claim_start = match.end()
+    return citations
 
 
 def _resolve_citations(
@@ -608,55 +633,51 @@ def _resolve_citations(
     blocks: dict[str, tuple[str, str]],
     context: str,
     citation_pattern: re.Pattern[str] = _CITATION_PATTERN,
-) -> tuple[list[str], list[str], list[str], list[str]]:
-    """Sort markers into (resolved, ambiguous, fabricated, ignored).
+) -> tuple[list[_Citation], list[str], list[str], list[str]]:
+    """Sort occurrences into (resolved, ambiguous, fabricated, ignored).
+
+    Resolved comes back as occurrences, because each is graded separately. The
+    other three are de-duplicated markers: they name a source problem rather than
+    a claim to verify.
 
     Four buckets, because "fabricated" is an accusation and this parser is not
     infallible:
 
     - **resolved** - names a parsed source block; the judge grades it.
     - **ambiguous** - appears bracketed somewhere in the context but not as a
-      block label. Most likely a shortcoming of the block parsing above, so the
+      block label. Most likely a shortcoming of the block parsing, so the
       response is not accused of inventing it.
-    - **fabricated** - appears nowhere in the context *and* resembles the labels
-      this context uses (see :func:`_is_fabrication_candidate`).
-    - **ignored** - a bracketed token that does not look like a source id at
-      all: ``arr[0]``, ``[TODO]``, markdown-link text. Not a citation, so
-      neither graded nor accused.
-
-    The ignored bucket exists because matching brackets is not the same as
-    finding citations. Without it, any bracketed token in a response that also
-    cites correctly would be reported as a fabricated source.
-
-    Matching is case-insensitive: a response writing ``[Fair-Lending]`` resolves
-    against a ``[fair-lending]`` source rather than being called a fabrication.
+    - **fabricated** - appears nowhere in the context *and* matches a label style
+      this context uses distinguishably.
+    - **ignored** - does not look like a source id at all: ``arr[0]``,
+      ``[TODO]``, markdown-link text.
     """
     inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
     accusable = _accusable_signatures(blocks)
-    resolved: list[str] = []
+    resolved: list[_Citation] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
     ignored: list[str] = []
     for citation in citations:
         key = citation.marker.lower()
-        candidate = _is_fabrication_candidate(citation, accusable)
         if key in blocks:
-            resolved.append(citation.marker)
-        elif accusable and not candidate:
+            resolved.append(citation)
+            continue
+        candidate = _is_fabrication_candidate(citation, accusable)
+        if accusable and not candidate:
             # Shape is checked before inline presence, but only when there is a
             # structured label style to compare against. Testing presence first
             # made ordinary bracket notation copied out of the context
-            # (``arr[0]``) ambiguous, which blocks the whole row. Testing shape
-            # unconditionally would go too far the other way: with no structured
-            # style parsed there is nothing to judge shape by, and a marker that
-            # does appear bracketed in the context is still a plausible citation.
-            ignored.append(citation.marker)
+            # (``arr[0]``) ambiguous, which blocks the whole row.
+            bucket = ignored
         elif key in inline:
-            ambiguous.append(citation.marker)
+            bucket = ambiguous
         elif candidate:
-            fabricated.append(citation.marker)
+            bucket = fabricated
         else:
-            ignored.append(citation.marker)
+            bucket = ignored
+        if citation.marker not in bucket:
+            bucket.append(citation.marker)
     return resolved, ambiguous, fabricated, ignored
 
 
@@ -710,58 +731,82 @@ def _json_safe(value: Any) -> Any:
     return repr(value)
 
 
-def _unverified_markers(
-    resolved: list[str],
-    supported: list[dict[str, str]],
-    misattributed: list[dict[str, str]],
-) -> list[str]:
-    """Resolved citations the judge left without a verdict that survived checking.
+def _verified_verdicts(
+    raw_verdicts: Any,
+    resolved: list[_Citation],
+    blocks: dict[str, tuple[str, str]],
+) -> tuple[dict[int, dict[str, Any]], list[int], int]:
+    """Verify at most one outcome per resolved occurrence.
 
-    Coverage is measured against the *verified* verdicts, not the raw judge
-    output. A verdict whose evidence could not be found in the row is discarded,
-    and a discarded verdict has established nothing, so counting it here would
-    let invented evidence satisfy the requirement it exists to enforce.
+    Returns the verified verdicts keyed by occurrence index, the indices that
+    carried more than one, and how many raw verdicts were considered.
 
-    A ``misattributed`` verdict counts as covered. This asks whether every
-    citation got a checkable answer, not whether the answers were good.
+    A verdict is kept only when it names a resolved occurrence, carries a
+    recognised outcome, and its evidence survives verification:
+
+    - **supported** - the span must come from the block the occurrence cites.
+    - **misattributed** - the span must come from a *different* block, named in
+      ``supporting_marker``. Evidence drawn from the cited block proves the claim
+      is supported by what was cited, the opposite of misattribution, and was
+      accepted before because the span was checked against the whole context.
     """
-    judged = {
-        _marker_key(item["marker"])
-        for item in (*supported, *misattributed)
-        if "marker" in item
-    }
-    return [marker for marker in resolved if _marker_key(marker) not in judged]
-
-
-def _verified_citation_spans(
-    raw_items: Any,
-    *,
-    output: str,
-    haystacks: dict[str, str],
-) -> list[dict[str, str]]:
-    """Verify judge citation items and re-attach the marker they carry.
-
-    ``_verified_evidence_spans`` rebuilds each span with only
-    ``response_span``/``context_span``, so the marker is restored here. Items
-    whose marker has no entry in ``haystacks`` are dropped: the judge referred
-    to something this scorer did not resolve, which is not evidence.
-    """
-    if not isinstance(raw_items, list):
-        return []
-    verified: list[dict[str, str]] = []
-    for item in raw_items:
+    by_index = {citation.index: citation for citation in resolved}
+    verified: dict[int, dict[str, Any]] = {}
+    contradictory: list[int] = []
+    considered = 0
+    if not isinstance(raw_verdicts, list):
+        return verified, contradictory, considered
+    for item in raw_verdicts:
         if not isinstance(item, dict):
             continue
-        marker = item.get("marker")
-        if not isinstance(marker, str):
+        considered += 1
+        index = item.get("occurrence")
+        outcome = item.get("outcome")
+        span = item.get("context_span")
+        if index not in by_index or not isinstance(span, str):
             continue
-        haystack = haystacks.get(_marker_key(marker))
-        if not haystack:
+        citation = by_index[index]
+        if outcome == "supported":
+            haystack = blocks[citation.marker.lower()][1]
+            source = citation.marker
+        elif outcome == "misattributed":
+            supporting = item.get("supporting_marker")
+            if not isinstance(supporting, str):
+                continue
+            if _marker_key(supporting) == citation.marker.lower():
+                continue
+            block = blocks.get(_marker_key(supporting))
+            if block is None:
+                continue
+            haystack, source = block[1], supporting.strip()
+        else:
             continue
-        spans = _verified_evidence_spans([item], output=output, context=haystack)
-        if spans:
-            verified.append({"marker": marker.strip(), **spans[0]})
-    return verified
+        checked = _verbatim_span(span, haystack)
+        if not checked:
+            continue
+        if index in verified:
+            contradictory.append(index)
+            continue
+        verified[index] = {
+            "occurrence": index,
+            "marker": citation.marker,
+            "outcome": outcome,
+            "claim": citation.claim,
+            "supporting_marker": source,
+            "context_span": checked,
+        }
+    return verified, sorted(set(contradictory)), considered
+
+
+def _score_agrees_with_outcomes(raw_score: float, outcomes: list[str]) -> bool:
+    """Does the judge's score sit in the band its own verified verdicts imply?
+
+    The score was taken from the judge and never checked against the verdicts, so
+    a verified misattribution alongside a score of 3 returned a full pass.
+    """
+    if "misattributed" in outcomes:
+        return raw_score <= _MISATTRIBUTION_SCORE_MAX
+    return raw_score >= _SUPPORTED_SCORE_MIN
 
 
 class CitationCorrectnessScorer(LLMJudgeScorer):
@@ -984,7 +1029,9 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             output=output,
             input=input,
             context=context,
-            resolved=", ".join(f"[{marker}]" for marker in resolved),
+            resolved="\n".join(
+                f"  {c.index}. [{c.marker}] - claim: {c.claim!r}" for c in resolved
+            ),
             fabricated=", ".join(f"[{marker}]" for marker in fabricated),
         )
         result = self._call_judge(prompts["system"], user_prompt)
@@ -1002,56 +1049,45 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 extra={"rejected_judge_reply": _json_safe(result)},
             )
 
-        raw_supported = result.get("supported_citations")
-        raw_misattributed = result.get("misattributed_citations")
-        # Only citations the response actually made are gradeable. Keying these
-        # on every parsed block would let the judge return a verdict about a
-        # source that was never cited and have it verify against that block's
-        # text, crediting the response for a citation it did not make.
-        resolved_keys = {marker.lower() for marker in resolved}
-        # A supported citation must be evidenced from the block it names. A
-        # misattributed one points at the wrong block by definition, so its
-        # evidence is checked against the whole context: that span identifies
-        # the source which does support the claim.
-        supported = _verified_citation_spans(
-            raw_supported,
-            output=output,
-            haystacks={
-                key: text
-                for key, (_, text) in blocks.items()
-                if key in resolved_keys
-            },
+        verified, contradictory, raw_verdict_count = _verified_verdicts(
+            result.get("verdicts"), resolved, blocks
         )
-        misattributed = _verified_citation_spans(
-            raw_misattributed,
-            output=output,
-            haystacks={key: context for key in resolved_keys},
-        )
-        raw_evidence_count = sum(
-            len(items)
-            for items in (raw_supported, raw_misattributed)
-            if isinstance(items, list)
-        )
-
-        # Nothing becomes an assessed score until the judge's reply is usable.
-        # An unusable score once clamped into a perfect result, and a reply
-        # covering only some of the citations still passed the row, which is the
-        # confident-result-without-evidence failure this scorer exists to avoid.
+        unverified = [c.marker for c in resolved if c.index not in verified]
+        outcomes = [v["outcome"] for v in verified.values()]
         score_value = _valid_judge_score(result.get("score"))
-        unverified = _unverified_markers(resolved, supported, misattributed)
-        if score_value is None or unverified:
-            if score_value is None:
-                reason = "invalid_judge_output"
-                cause = (
-                    "the judge returned a score that is not a finite number "
-                    f"between 0 and {_JUDGE_SCORE_MAX:.0f}"
-                )
-            else:
-                reason = "incomplete_judge_verdicts"
-                cause = (
-                    "the judge returned no verifiable verdict for "
-                    f"{', '.join(unverified)}"
-                )
+
+        # Nothing becomes an assessed score until the reply is usable, complete
+        # and self-consistent. Each of these once produced a confident result for
+        # a citation that had not been established: an unusable score clamped to
+        # a perfect one, a partial reply passed the citations it skipped, a
+        # marker in two outcomes passed on whichever verified, and a score of 3
+        # stood alongside a verified misattribution.
+        reason = cause = ""
+        if score_value is None:
+            reason = "invalid_judge_output"
+            cause = (
+                "the judge returned a score that is not a finite number between "
+                f"0 and {_JUDGE_SCORE_MAX:.0f}"
+            )
+        elif contradictory:
+            reason = "contradictory_judge_verdicts"
+            cause = (
+                "the judge returned more than one outcome for citation "
+                + ", ".join(str(index) for index in contradictory)
+            )
+        elif unverified:
+            reason = "incomplete_judge_verdicts"
+            cause = "the judge returned no verifiable verdict for " + ", ".join(
+                unverified
+            )
+        elif not _score_agrees_with_outcomes(score_value, outcomes):
+            reason = "judge_score_contradicts_verdicts"
+            cause = (
+                f"the judge scored {score_value:.0f} while its own verified "
+                "verdicts were " + ", ".join(sorted(set(outcomes)))
+            )
+
+        if reason:
             if fabricated:
                 # A deterministic local finding already proves failure, so an
                 # unusable judge reply must not rescue the row into un-assessed.
@@ -1080,19 +1116,15 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 )
             return self._unassessed(
                 reason,
-                f"Un-assessed: {cause}, so no citation was established either "
-                "way.",
+                f"Un-assessed: {cause}, so no citation was established either way.",
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
             )
 
-        # An ambiguous marker is a plausible citation this scorer could not grade,
-        # so a row containing one has only been partly assessed. ``assessed`` is
-        # a binary field with no partial state, and aggregating a partial result
-        # as complete is what lets a row report confidence it has not earned.
-        # Ignored markers do not count: those were determined not to be citations
-        # at all, so a code sample alongside real citations still scores.
+        # An ambiguous marker is a plausible citation this scorer could not
+        # grade, so a row containing one has only been partly assessed. Ignored
+        # markers do not count: those were determined not to be citations.
         if ambiguous and not fabricated:
             return self._unassessed(
                 "partial_citation_coverage",
@@ -1108,17 +1140,13 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         raw_score = score_value
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
 
-        # A citation naming a source absent from the context is established in
-        # Python, so it is not left to the judge to weigh. The judge's own score
-        # is preserved in details rather than overwritten.
         judge_explanation = str(result.get("explanation", ""))
         explanation = judge_explanation
         floor_applied = bool(fabricated)
         if floor_applied:
             normalized = 0.0
             # The judge is not told the outcome, so its text can read as a pass
-            # while the row fails. The deterministic finding leads, and the
-            # judge's own words follow rather than being dropped.
+            # while the row fails. The deterministic finding leads.
             explanation = (
                 "Cited sources are absent from the retrieved context: "
                 f"{', '.join(fabricated)}."
@@ -1129,6 +1157,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                     f"{judge_explanation}"
                 )
 
+        graded = sorted(verified.values(), key=lambda v: v["occurrence"])
         return ScorerResult(
             score=normalized,
             passed=ScoreNormalizer.apply_threshold(normalized, self.threshold),
@@ -1140,15 +1169,17 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 "max_score": 3,
                 "judge_model": self.model,
                 "floor_applied": floor_applied,
-                "supported_citations": supported,
-                "misattributed_citations": misattributed,
+                "supported_citations": [
+                    v for v in graded if v["outcome"] == "supported"
+                ],
+                "misattributed_citations": [
+                    v for v in graded if v["outcome"] == "misattributed"
+                ],
                 "fabricated_citations": fabricated,
                 "ambiguous_citations": ambiguous,
                 "ignored_markers": ignored,
                 "judge_explanation": judge_explanation,
-                "discarded_evidence_spans": raw_evidence_count
-                - len(supported)
-                - len(misattributed),
+                "discarded_evidence_spans": raw_verdict_count - len(verified),
             },
         )
 

@@ -305,7 +305,7 @@ CITATION_CORRECTNESS_SYSTEM = (
     "evidence spans."
 )
 
-CITATION_CORRECTNESS_TEMPLATE = """Grade whether the AI Response's citations point at sources that support them.
+CITATION_CORRECTNESS_TEMPLATE = """Grade whether each cited claim is supported by the source it names.
 
 **User Input:** {input}
 
@@ -313,11 +313,11 @@ CITATION_CORRECTNESS_TEMPLATE = """Grade whether the AI Response's citations poi
 
 **AI Response:** {output}
 
-A `[source-id]` marker in the Response attributes a claim to the Context block
-carrying that label. For each citation you are asked to grade, decide whether that
-specific block supports the claim it is attached to. A claim supported somewhere
-else in the Context but attributed to the wrong block is **misattributed**, not
-supported.
+Each numbered citation below pairs a claim from the Response with the source it
+attributes that claim to. The claim text is given to you; do not re-derive it.
+Decide, for each one, whether the named block supports that claim. A claim
+supported somewhere else in the Context but attributed to the wrong block is
+**misattributed**, not supported.
 
 Score on a 0-3 scale:
 - 3: every citation is supported by the block it names
@@ -325,28 +325,29 @@ Score on a 0-3 scale:
 - 1: at least one claim is attributed to a block that does not support it
 - 0: a citation naming a source absent from the Context, or the central claim is misattributed
 
-Return exact, verbatim evidence spans. Every span must be copied from the
-corresponding field above; do not paraphrase or use outside knowledge. For a
-misattributed citation, `context_span` must be the text from the block that
-*actually* supports the claim, so the correct source is identifiable.
+Return exactly one verdict per numbered citation. Evidence spans must be copied
+verbatim from the Context; do not paraphrase or use outside knowledge. For a
+misattributed citation, name the block that *actually* supports the claim in
+`supporting_marker` and quote from that block, not from the one that was cited.
 
 Respond in JSON format:
 {{
   "score": <0-3>,
   "explanation": "<brief evidence-based reasoning>",
-  "supported_citations": [
-    {{"marker": "<source-id as cited>", "response_span": "<exact response text>", "context_span": "<exact text from that block>"}}
-  ],
-  "misattributed_citations": [
-    {{"marker": "<source-id as cited>", "response_span": "<exact response text>", "context_span": "<exact text from the block that does support it>"}}
+  "verdicts": [
+    {{"occurrence": <number>, "outcome": "supported", "context_span": "<exact text from the cited block>"}},
+    {{"occurrence": <number>, "outcome": "misattributed", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}}
   ]
 }}"""
 
 CITATION_SCOPE_BLOCK = """
 
-**Grade only these citations:** {resolved}
-Every other bracketed token in the Response has already been checked and is not a
-citation to a retrieved source. Do not grade it and do not let it affect the score."""
+**Citations to grade:**
+{resolved}
+
+Return one verdict for each, keyed by its number. Every other bracketed token in
+the Response has already been checked and is not a citation to a retrieved
+source. Do not grade it and do not let it affect the score."""
 
 CITATION_FABRICATED_BLOCK = """
 
