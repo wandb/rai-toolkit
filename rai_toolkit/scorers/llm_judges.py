@@ -1068,6 +1068,24 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 ignored=ignored,
             )
 
+        # An ambiguous marker is a plausible citation this scorer could not
+        # grade, so a row containing one has only been partly assessed. Ignored
+        # markers do not count: those were determined not to be citations. A
+        # fabrication is exempt because a proven failure outranks a coverage
+        # gap. Checked before the judge call, like every other guard, so the
+        # row is not billed for a verdict that would be discarded.
+        if ambiguous and not fabricated:
+            return self._unassessed(
+                "partial_citation_coverage",
+                "Un-assessed: "
+                f"{', '.join(ambiguous)} could not be resolved to a labelled "
+                "source, so only some of the response's citations were graded. "
+                "A partly assessed row is not reported as a complete one.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+            )
+
         prompts = self._get_prompts()
         user_prompt = self._format_prompt(
             output=_annotate_occurrences(output, resolved),
@@ -1161,21 +1179,6 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             return self._unassessed(
                 reason,
                 f"Un-assessed: {cause}, so no citation was established either way.",
-                fabricated=fabricated,
-                ambiguous=ambiguous,
-                ignored=ignored,
-            )
-
-        # An ambiguous marker is a plausible citation this scorer could not
-        # grade, so a row containing one has only been partly assessed. Ignored
-        # markers do not count: those were determined not to be citations.
-        if ambiguous and not fabricated:
-            return self._unassessed(
-                "partial_citation_coverage",
-                "Un-assessed: "
-                f"{', '.join(ambiguous)} could not be resolved to a labelled "
-                "source, so only some of the response's citations were graded. "
-                "A partly assessed row is not reported as a complete one.",
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
