@@ -1184,7 +1184,13 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         raw_score = score_value
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
 
-        judge_explanation = str(result.get("explanation", ""))
+        # Only a string is carried through. str() on the raw value put a Python
+        # repr into the report, so a reply of null read as the explanation
+        # "None" and a dict arrived as "{'a': 1}".
+        raw_explanation = result.get("explanation")
+        judge_explanation = (
+            raw_explanation if isinstance(raw_explanation, str) else ""
+        )
         explanation = judge_explanation
         floor_applied = bool(fabricated)
         if floor_applied:
