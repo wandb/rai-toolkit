@@ -518,6 +518,10 @@ class _Citation(NamedTuple):
     in place. The claim itself is deliberately not derived here: slicing text
     between markers truncated mid-sentence citations to a fragment, and a
     citation opening a sentence produced no claim at all.
+
+    ``index`` is the ordinal among all extracted markers until
+    :func:`_resolve_citations` renumbers the resolved ones contiguously. Only
+    those reach the judge, so only their numbering is visible to it.
     """
 
     marker: str
@@ -690,7 +694,11 @@ def _resolve_citations(
     for citation in citations:
         key = citation.marker.lower()
         if key in blocks:
-            resolved.append(citation)
+            # Renumbered contiguously so the judge sees 1, 2, 3 rather than the
+            # ordinal among every bracketed token. A response whose first
+            # bracket is "arr[0]" would otherwise present its only real citation
+            # as occurrence 2, with no occurrence 1 anywhere in the prompt.
+            resolved.append(citation._replace(index=len(resolved) + 1))
             continue
         candidate = _is_fabrication_candidate(citation, accusable)
         if accusable and not candidate:
