@@ -456,6 +456,9 @@ _JUDGE_SCORE_MAX = 3.0
 _MISATTRIBUTION_SCORE_MAX = 1.0
 _SUPPORTED_SCORE_MIN = 2.0
 
+# Shortest span that can corroborate anything.
+_MIN_EVIDENCE_SPAN = 2
+
 
 def _parse_source_blocks(
     context: str,
@@ -626,6 +629,11 @@ def _extract_citations(
     ]
 
 
+def _strip_occurrence_tags(text: str) -> str:
+    """Remove any occurrence-tag characters the response already contained."""
+    return text.replace(_OCCURRENCE_OPEN, "").replace(_OCCURRENCE_CLOSE, "")
+
+
 def _annotate_occurrences(output: str, citations: list[_Citation]) -> str:
     """Tag each citation in the response with its occurrence number.
 
@@ -639,10 +647,13 @@ def _annotate_occurrences(output: str, citations: list[_Citation]) -> str:
     annotated: list[str] = []
     cursor = 0
     for citation in citations:
-        annotated.append(output[cursor : citation.end])
+        # Any tag characters already in the response are removed, so each
+        # citation carries exactly one and the judge cannot bind a verdict to a
+        # sequence the model happened to write itself.
+        annotated.append(_strip_occurrence_tags(output[cursor : citation.end]))
         annotated.append(f"{_OCCURRENCE_OPEN}{citation.index}{_OCCURRENCE_CLOSE}")
         cursor = citation.end
-    annotated.append(output[cursor:])
+    annotated.append(_strip_occurrence_tags(output[cursor:]))
     return "".join(annotated)
 
 
@@ -787,6 +798,9 @@ def _verified_verdicts(
         index = item.get("occurrence")
         outcome = item.get("outcome")
         span = item.get("context_span")
+        # bool subclasses int and 1.0 == 1, so either would index occurrence 1.
+        if isinstance(index, bool) or not isinstance(index, int):
+            continue
         if index not in by_index or not isinstance(span, str):
             continue
         citation = by_index[index]
@@ -806,7 +820,9 @@ def _verified_verdicts(
         else:
             continue
         checked = _verbatim_span(span, haystack)
-        if not checked:
+        # A one-character span occurs in almost any block, so it corroborates
+        # nothing. Two is enough to keep short but real evidence such as "8%".
+        if not checked or len(checked.strip()) < _MIN_EVIDENCE_SPAN:
             continue
         if index in verified:
             contradictory.append(index)
