@@ -1416,6 +1416,69 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             "ignored_markers": ignored or [],
         }
 
+    def _rejected_judge_output(
+        self,
+        reason: str,
+        cause: str,
+        *,
+        raw_score: Any,
+        fabricated: list[str],
+        ambiguous: list[str],
+        ignored: list[str],
+        verified: list[dict[str, Any]] | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> ScorerResult:
+        """Result for an unusable judge reply, honouring a proven fabrication.
+
+        A fabrication is established before the judge is called, so an unusable
+        reply must not turn that deterministic failure into a coverage gap.
+        Every path that rejects a reply routes through here, which is what the
+        non-object guard previously skipped.
+        """
+        if not fabricated:
+            return self._unassessed(
+                reason,
+                f"Un-assessed: {cause}, so no citation was established either "
+                "way.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+                extra=extra,
+            )
+        details = self._marker_details(
+            fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
+        )
+        # Whatever did verify is still evidence, so it is reported rather than
+        # discarded because the reply as a whole was unusable.
+        graded = sorted(verified or [], key=lambda v: v["occurrence"])
+        details["supported_citations"] = [
+            v for v in graded if v["outcome"] == "supported"
+        ]
+        details["misattributed_citations"] = [
+            v for v in graded if v["outcome"] == "misattributed"
+        ]
+        details.update(extra or {})
+        details.update(
+            {
+                "raw_score": None,
+                "rejected_raw_score": _json_safe(raw_score),
+                "floor_applied": True,
+                "judge_output_rejected": reason,
+            }
+        )
+        return ScorerResult(
+            score=0.0,
+            passed=False,
+            category=self.category,
+            explanation=(
+                "Cited sources are absent from the retrieved context: "
+                f"{', '.join(fabricated)}. Recorded as a failure despite "
+                f"unusable judge output, because {cause}."
+            ),
+            details=details,
+            assessed=True,
+        )
+
     def _unassessed(
         self,
         reason: str,
@@ -1566,10 +1629,11 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         # has a non-object top level for ``null`` or ``[]``. Reading a score off
         # one raised rather than producing a controlled result.
         if not isinstance(result, dict):
-            return self._unassessed(
+            return self._rejected_judge_output(
                 "invalid_judge_output",
-                "Un-assessed: the judge reply was not a JSON object, so no "
-                "verdict could be read from it.",
+                "the judge reply was not a JSON object, so no verdict could be "
+                "read from it",
+                raw_score=None,
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
@@ -1615,38 +1679,14 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             )
 
         if reason:
-            if fabricated:
-                # A deterministic local finding already proves failure, so an
-                # unusable judge reply must not rescue the row into un-assessed.
-                details = self._marker_details(
-                    fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
-                )
-                details.update(
-                    {
-                        "raw_score": None,
-                        "rejected_raw_score": _json_safe(result.get("score")),
-                        "floor_applied": True,
-                        "judge_output_rejected": reason,
-                    }
-                )
-                return ScorerResult(
-                    score=0.0,
-                    passed=False,
-                    category=self.category,
-                    explanation=(
-                        "Cited sources are absent from the retrieved context: "
-                        f"{', '.join(fabricated)}. Recorded as a failure despite "
-                        f"unusable judge output, because {cause}."
-                    ),
-                    details=details,
-                    assessed=True,
-                )
-            return self._unassessed(
+            return self._rejected_judge_output(
                 reason,
-                f"Un-assessed: {cause}, so no citation was established either way.",
+                cause,
+                raw_score=result.get("score"),
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
+                verified=list(verified.values()),
             )
 
         raw_score = score_value

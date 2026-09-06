@@ -392,7 +392,8 @@ source. Do not grade it and do not let it affect the score."""
 CITATION_FABRICATED_BLOCK = """
 
 **Already verified as fabricated (these markers name no source in the Context):** {fabricated}
-Do not attempt to verify them; they are confirmed absent. Factor them into the score."""
+Do not attempt to verify them; they are confirmed absent, and they are handled
+outside your score. Score only the citations listed above."""
 
 
 JUDGE_PROMPTS: dict[str, dict[str, str]] = {

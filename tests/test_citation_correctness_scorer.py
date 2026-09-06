@@ -1814,3 +1814,75 @@ def test_source_shaped_tokens_inside_code_are_not_citations() -> None:
     assert result.score == 1.0
     assert result.details["fabricated_citations"] == []
     assert result.details["ignored_markers"] == []
+
+
+# --- review #27 round 4, group B: the fabrication guarantee ---
+
+
+@pytest.mark.parametrize("reply", [None, [], "a string", 3])
+def test_a_malformed_reply_cannot_rescue_a_proven_fabrication(reply: object) -> None:
+    # The fabrication is established before the judge is called, so an unusable
+    # reply must not turn a deterministic failure into a coverage gap. The
+    # non-object guard returned before reaching the fabrication branch.
+    context = "[doc-1] Real source text."
+    scorer = _scorer(reply)
+
+    result = scorer.score("Valid [doc-1]. Bogus [doc-99].", context=context)
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["doc-99"]
+    assert result.details["judge_output_rejected"] == "invalid_judge_output"
+
+
+def test_a_malformed_reply_without_a_fabrication_stays_unassessed() -> None:
+    # Control: the guarantee is about proven fabrications, not about turning
+    # every unusable reply into a failure.
+    scorer = _scorer(None)
+
+    result = scorer.score("Valid [doc-1].", context="[doc-1] Real source text.")
+
+    assert not result.assessed
+    assert result.details["skipped"] == "invalid_judge_output"
+
+
+def test_the_prompt_does_not_ask_the_judge_to_score_fabrications() -> None:
+    # The prompt told the judge to factor absent sources into the score while
+    # the coherence rule expected a score reflecting only the resolved verdicts,
+    # so a judge that obeyed was recorded as having produced faulty output.
+    context = "[doc-1] Real source text."
+    output = "Valid [doc-1]. Bogus [doc-99]."
+    scorer = _covering_scorer(output, context)
+
+    scorer.score(output, context=context)
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "verified as fabricated" in prompt
+    assert "Factor them into the score" not in prompt
+    assert "Score only the citations listed above" in prompt
+
+
+def test_a_rejected_reply_keeps_the_evidence_that_did_verify() -> None:
+    context = "[doc-1] Real source text."
+    scorer = _scorer(
+        {
+            "score": 0,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "Valid",
+                    "context_span": "Real source text",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score("Valid [doc-1]. Bogus [doc-99].", context=context)
+
+    assert result.assessed
+    assert result.score == 0.0
+    assert len(result.details["supported_citations"]) == 1
+    assert result.details["judge_output_rejected"] == "judge_score_contradicts_verdicts"
