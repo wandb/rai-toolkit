@@ -2011,6 +2011,48 @@ def test_the_prompt_asks_for_evidence_unique_to_the_supporting_block() -> None:
     assert "appears **only** in that block" in prompt
 
 
+def test_the_rubric_does_not_score_absent_sources() -> None:
+    # The rubric band and the fabricated block were both in the prompt and said
+    # opposite things: band 0 told the judge to score a citation naming an absent
+    # source, while the block told it those are handled outside its score. A
+    # judge obeying the band had its reply rejected as incoherent.
+    output = "Notices are required [adverse-action]. Rates capped [reg-z-2024]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "a citation naming a source absent from the Context" not in prompt
+    assert "must not move your score" in prompt
+
+
+def test_a_judge_following_the_rubric_is_not_rejected() -> None:
+    # The behavioural half: scoring the resolved citation alone stays coherent
+    # while a fabrication is present, because the floor owns that result.
+    output = "Notices are required [adverse-action]. Rates capped [reg-z-2024]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "The cited block supports the claim.",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "Notices are required",
+                    "context_span": "notices are required for denied applicants.",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["floor_applied"]
+    assert "judge_output_rejected" not in result.details
+
+
 def test_the_prompt_does_not_ask_the_judge_to_score_fabrications() -> None:
     # The prompt told the judge to factor absent sources into the score while
     # the coherence rule expected a score reflecting only the resolved verdicts,

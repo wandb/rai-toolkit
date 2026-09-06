@@ -361,7 +361,11 @@ Score on a 0-3 scale:
 - 3: every citation is supported by the block it names
 - 2: every citation resolves to a supporting block, with only a harmless imprecision
 - 1: at least one claim is attributed to a block that does not support it
-- 0: a citation naming a source absent from the Context, or the central claim is misattributed
+- 0: the central claim of the Response is attributed to a block that does not
+  support it
+
+Score only the citations you are asked to grade. A marker naming no source in
+the Context is established outside this judgement and must not move your score.
 
 Return exactly one verdict per numbered citation. Evidence spans must be copied
 verbatim from the Context; do not paraphrase or use outside knowledge. For a
