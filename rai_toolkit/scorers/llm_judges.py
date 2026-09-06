@@ -1241,14 +1241,17 @@ def _verified_verdicts(
 
     - **supported** - the span must come from the block the occurrence cites.
     - **misattributed** - the span must come from a *different* block, named in
-      ``supporting_marker``. Evidence drawn from the cited block proves the claim
-      is supported by what was cited, the opposite of misattribution, and was
-      accepted before because the span was checked against the whole context.
+      ``supporting_marker``, and must *not* also verify against the cited block.
+      Evidence drawn from the cited block proves the claim is supported by what
+      was cited, the opposite of misattribution.
 
-    ``claim_span`` is advisory. It is recorded when it quotes the response
-    verbatim, because a report reads better naming the claim than an index, but
-    it never binds the verdict: the occurrence number does that, and it is
-    attached to the marker in the text the judge was given.
+    ``claim_span`` is advisory. It is kept as ``response_span``, the field #22
+    agreed on and :func:`_verified_evidence_spans` already emits, when it quotes
+    the response verbatim, because a report reads better naming the claim than an
+    index. It never binds the verdict: the occurrence number does that, and it is
+    attached to the marker in the text the judge was given. Where it does not
+    verify the key is absent rather than empty, so an unverifiable quote is not
+    read as a claim that was blank.
     """
     by_index = {citation.index: citation for citation in resolved}
     verified: dict[int, dict[str, Any]] = {}
@@ -1281,6 +1284,12 @@ def _verified_verdicts(
             block = blocks.get(_marker_key(supporting))
             if block is None:
                 continue
+            # Blocks overlap in ordinary retrieval - sliding windows, shared
+            # boilerplate, two documents quoting one rule - so evidence can sit
+            # in both. Evidence the cited block also contains shows that block
+            # supporting the claim, which is the opposite of misattribution.
+            if _verbatim_span(span, blocks[citation.marker.lower()][1]):
+                continue
             haystack, source = block[1], supporting.strip()
         else:
             continue
@@ -1296,14 +1305,18 @@ def _verified_verdicts(
         claim = (
             _verbatim_span(raw_claim, output) if isinstance(raw_claim, str) else None
         )
-        verified[index] = {
+        verdict: dict[str, Any] = {
             "occurrence": index,
             "marker": citation.marker,
             "outcome": outcome,
-            "claim": claim or "",
-            "supporting_marker": source,
-            "context_span": checked,
         }
+        # Omitted rather than emptied when the quote does not verify, so a
+        # reader cannot mistake unverifiable evidence for an empty claim.
+        if claim:
+            verdict["response_span"] = claim
+        verdict["supporting_marker"] = source
+        verdict["context_span"] = checked
+        verified[index] = verdict
     return verified, sorted(set(contradictory)), considered
 
 

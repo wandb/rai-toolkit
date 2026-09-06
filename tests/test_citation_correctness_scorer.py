@@ -280,11 +280,101 @@ def test_supported_citation_scores_full_and_keeps_marker() -> None:
             "occurrence": 1,
             "marker": "adverse-action",
             "outcome": "supported",
-            "claim": "Notices are required for denied applicants",
+            "response_span": "Notices are required for denied applicants",
             "supporting_marker": "adverse-action",
             "context_span": "notices are required for denied applicants",
         }
     ]
+
+
+# Overlapping retrieved blocks are ordinary: sliding-window chunking, shared
+# boilerplate, two documents quoting the same rule. Evidence found in both
+# cannot distinguish which block supports a claim.
+OVERLAP_CONTEXT = (
+    "[doc-1] The policy requires notice. Filing rules apply to small banks.\n\n"
+    "[doc-2] The policy requires notice. This restates the federal requirement."
+)
+
+
+def test_evidence_the_cited_block_also_contains_cannot_prove_misattribution() -> None:
+    output = "Notice is required [doc-1]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "Really supported by doc-2.",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "doc-2",
+                    "claim_span": "Notice is required",
+                    # Verbatim in doc-2, but verbatim in the cited doc-1 too.
+                    "context_span": "The policy requires notice.",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=OVERLAP_CONTEXT)
+
+    # The verdict is rejected rather than believed, leaving the occurrence
+    # unverified. Reporting no result beats reporting a correct citation as a
+    # failure, which is what an accepted verdict would have done.
+    assert not result.assessed
+    assert result.details["skipped"] == "incomplete_judge_verdicts"
+    assert result.details["misattributed_citations"] == []
+
+
+def test_a_real_misattribution_still_fails_when_blocks_overlap() -> None:
+    # The control: evidence unique to the supporting block still convicts, so
+    # the guard rejects contradicted verdicts rather than misattribution itself.
+    output = "Notice is required [doc-1]."
+    scorer = _scorer(
+        {
+            "score": 1,
+            "explanation": "Really supported by doc-2.",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "misattributed",
+                    "supporting_marker": "doc-2",
+                    "claim_span": "Notice is required",
+                    "context_span": "This restates the federal requirement.",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=OVERLAP_CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["misattributed_citations"][0]["supporting_marker"] == "doc-2"
+
+
+def test_overlapping_blocks_do_not_disturb_a_supported_verdict() -> None:
+    output = "Notice is required [doc-1]."
+    scorer = _scorer(
+        {
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "Notice is required",
+                    "context_span": "The policy requires notice.",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(output, context=OVERLAP_CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+    assert result.details["supported_citations"][0]["response_span"] == "Notice is required"
+
 
 
 def test_misattributed_citation_fails_and_names_the_real_source() -> None:
@@ -1432,7 +1522,8 @@ def test_a_fabricated_claim_span_is_discarded_but_keeps_the_verdict() -> None:
     result = scorer.score(output, context=CONTEXT)
 
     assert result.assessed
-    assert result.details["supported_citations"][0]["claim"] == ''
+    # Absent, not empty: an unverifiable quote must not read as a blank claim.
+    assert "response_span" not in result.details["supported_citations"][0]
 
 
 def test_contradictory_verdicts_for_one_occurrence_are_rejected() -> None:
