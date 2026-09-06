@@ -48,7 +48,9 @@ def test_nyc_ll_144_bias_audit_window_is_one_year() -> None:
     audit_req = NYC_LL_144_REQUIREMENTS["NYC-LL144-1"]
     assert "one year" in audit_req.description
     assert "two years" not in audit_req.description
-    assert "material" not in audit_req.description.lower() or "no material" in audit_req.description.lower()
+    # Audit currency is time-based only; there is no material-change trigger.
+    assert "material change" not in audit_req.description.lower()
+    assert "material modification" not in audit_req.description.lower()
 
 
 def test_nyc_ll_144_no_numeric_impact_ratio_threshold() -> None:
@@ -56,9 +58,13 @@ def test_nyc_ll_144_no_numeric_impact_ratio_threshold() -> None:
     audit_req = NYC_LL_144_REQUIREMENTS["NYC-LL144-2"]
     assert "0.8" not in audit_req.description
     assert "80%" not in audit_req.description
-    assert "threshold" in audit_req.description
-    assert "no numeric" in audit_req.description or "no numeric" in " ".join(
-        gap for gap in audit_req.coverage_gaps
+    # The description states the absence of a threshold in plain terms.
+    assert "no numeric impact-ratio threshold" in audit_req.description.lower() or (
+        "neither the law nor the rule establishes" in audit_req.description.lower()
+    )
+    joined_gaps = " ".join(audit_req.coverage_gaps).lower()
+    assert "threshold" in joined_gaps and (
+        "sets none" in joined_gaps or "no numeric" in joined_gaps or "none" in joined_gaps
     )
 
 
