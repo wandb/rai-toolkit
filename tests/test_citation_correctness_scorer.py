@@ -10,6 +10,7 @@ import pytest
 
 from rai_toolkit.assessment.assessor import _classify_unassessed_reason
 from rai_toolkit.scorers.llm_judges import (
+    _CITATION_PATTERN,
     _OCCURRENCE_TAG_CANDIDATES,
     CitationCorrectnessScorer,
     _extract_citations,
@@ -1761,6 +1762,14 @@ def test_the_prompt_states_which_delimiters_were_used() -> None:
     prompt = scorer._call_judge.call_args.args[1]
     assert f"{open_}n{close}" in prompt
     assert f"{open_}1{close}" in prompt
+
+
+def test_no_candidate_tag_can_be_read_as_a_citation() -> None:
+    # A pair using "[" or "]" would make annotation manufacture citations that
+    # were never written, so the constraint is enforced rather than documented.
+    for open_, close in _OCCURRENCE_TAG_CANDIDATES:
+        assert "[" not in (open_ + close) and "]" not in (open_ + close)
+        assert not _CITATION_PATTERN.search(f"{open_}1{close}")
 
 
 def test_a_tag_is_found_even_when_every_candidate_collides() -> None:

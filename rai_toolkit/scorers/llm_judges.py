@@ -838,11 +838,11 @@ _EDITORIAL_MARKERS = frozenset({"sic", "ibid", "ed", "nb"})
 # in step with the character class of _CITATION_PATTERN.
 _LABEL_SEPARATORS = ("-", ".", "_")
 
-# Occurrence tags shown to the judge. Chosen so the citation pattern cannot
-# match them: it requires an alphanumeric immediately after "[".
 # Bracket pairs to tag occurrences with, tried in order. Rare in prose, but a
 # response about formal semantics or set notation can contain any of them, so the
-# pair is chosen per response rather than fixed.
+# pair is chosen per response rather than fixed. None may be "[" or "]": the
+# citation pattern would then match the tag itself and annotation would
+# manufacture citations that were never written.
 _OCCURRENCE_TAG_CANDIDATES = (
     ("\u27e6", "\u27e7"),  # white square brackets
     ("\u2e24", "\u2e25"),  # bottom half brackets
