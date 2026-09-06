@@ -820,23 +820,27 @@ def test_any_separator_makes_a_label_grammar_distinguishable(separator: str) -> 
     ],
 )
 def test_mixed_form_markers_classify_the_same_in_either_order(output: str) -> None:
+    # Order independence still holds with per-occurrence state, because
+    # occurrences are distinct: one bare and one link either way. The bare one
+    # names no source, so it is accused rather than laundered by its neighbour.
     scorer = _covering_scorer(output, CONTEXT)
 
     result = scorer.score(output, context=CONTEXT)
 
-    assert result.details["fabricated_citations"] == []
-    assert result.details["ignored_markers"] == ["fake-id"]
-    assert result.score == 1.0
+    assert result.details["fabricated_citations"] == ["fake-id"]
+    assert result.score == 0.0
 
 
-def test_extraction_collapses_link_form_across_occurrences() -> None:
+def test_link_state_is_kept_per_occurrence() -> None:
+    # Collapsing the flag across a marker let one link occurrence mark every
+    # occurrence as link text, so a bare fabrication elsewhere escaped.
     for output in (
         "[fake-id](https://x/y) then [fake-id]",
         "[fake-id] then [fake-id](https://x/y)",
     ):
         citations = _extract_citations(output)
         assert len(citations) == 2
-        assert all(c.from_link for c in citations)
+        assert sorted(c.from_link for c in citations) == [False, True]
 
 
 # --- review #27 round 2, item 7/8: empty and duplicate blocks ---
@@ -1728,3 +1732,85 @@ def test_gradeable_citations_are_numbered_contiguously() -> None:
     assert "[TODO]⟦" not in prompt
     assert [v["occurrence"] for v in result.details["supported_citations"]] == [1, 2]
     assert result.details["ignored_markers"] == ["0", "TODO"]
+
+
+# --- review #27 round 4, group A: classification ---
+
+
+def test_a_link_occurrence_does_not_launder_a_bare_fabrication() -> None:
+    context = "[doc-1] Real source text."
+    output = "Valid [doc-1]. Bare [doc-99]. Link [doc-99](https://x/y)."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == ["doc-99"]
+
+
+@pytest.mark.parametrize(
+    "context,marker",
+    [
+        ("[dup] first\n\n[dup] second\n\n[keep-this] Real body text.", "dup"),
+        ("[empty]\n[doc-1] Real body text.", "empty"),
+    ],
+)
+def test_citing_a_dropped_label_is_ambiguous_not_ignored(
+    context: str, marker: str
+) -> None:
+    # A label the context declares but this scorer could not use. Filed as
+    # ignored, it let the row pass; it must block as partial coverage instead.
+    other = "keep-this" if marker == "dup" else "doc-1"
+    output = f"A [{marker}]. B [{other}]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "partial_citation_coverage"
+    assert result.details["ambiguous_citations"] == [marker]
+
+
+@pytest.mark.parametrize("token", ["0-1", "x-y", "1.2", "a-b"])
+def test_ordinary_notation_is_not_accusation_grade(token: str) -> None:
+    # The separator signature proves syntactic similarity, not citation intent.
+    context = "[doc-1] Real source text."
+    output = f"The value is [{token}]. Valid claim [doc-1]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 1.0
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == [token]
+
+
+@pytest.mark.parametrize(
+    "label,marker",
+    [("doc-1", "doc-99"), ("doc-1", "reg-z-2024"), ("source_one", "source_two")],
+)
+def test_word_like_markers_are_still_accused(label: str, marker: str) -> None:
+    # Control: narrowing must not stop the scorer accusing real fabrications.
+    # The label shares the marker's style, since accusation is per label style.
+    context = f"[{label}] Real source text."
+    output = f"Valid [{label}]. Bogus [{marker}]."
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 0.0
+    assert result.details["fabricated_citations"] == [marker]
+
+
+def test_source_shaped_tokens_inside_code_are_not_citations() -> None:
+    context = "[doc-1] Real source text."
+    output = (
+        "Use `[doc-2]` inline, and:\n```\nlookup [doc-3] here\n```\nValid [doc-1]."
+    )
+    scorer = _covering_scorer(output, context)
+
+    result = scorer.score(output, context=context)
+
+    assert result.score == 1.0
+    assert result.details["fabricated_citations"] == []
+    assert result.details["ignored_markers"] == []

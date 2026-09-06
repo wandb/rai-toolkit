@@ -969,6 +969,21 @@ def _accusable_signatures(
     }
 
 
+def _has_word_like_part(marker: str) -> bool:
+    """Does the marker contain a part that reads as a word rather than notation?
+
+    The separator signature establishes syntactic similarity, not that a bracket
+    was a citation attempt: ``[0-1]`` and ``[x-y]`` match ``[doc-1]`` exactly.
+    Requiring at least one part of two or more letters separates a source id
+    from an interval or a coordinate pair. A genuinely short id such as ``a-1``
+    stops being accusable, which errs towards not accusing.
+    """
+    return any(
+        sum(character.isalpha() for character in part) >= 2
+        for part in re.split(r"[-._]", marker)
+    )
+
+
 def _is_fabrication_candidate(
     citation: _Citation,
     accusable_signatures: set[tuple[bool, ...]],
@@ -987,7 +1002,22 @@ def _is_fabrication_candidate(
     """
     if citation.from_link:
         return False
+    if not _has_word_like_part(citation.marker):
+        return False
     return _marker_signature(citation.marker) in accusable_signatures
+
+
+def _code_spans(text: str) -> list[tuple[int, int]]:
+    """Ranges covered by fenced or inline code.
+
+    A source-shaped token inside code is notation, not a citation. Spans are
+    returned rather than the text stripped, so marker offsets stay valid for
+    annotation.
+    """
+    spans: list[tuple[int, int]] = []
+    for match in re.finditer(r"```.*?```|`[^`\n]*`", text, re.DOTALL):
+        spans.append((match.start(), match.end()))
+    return spans
 
 
 def _extract_citations(
@@ -996,34 +1026,62 @@ def _extract_citations(
 ) -> list[_Citation]:
     """Return every citation occurrence in the response, in order.
 
-    Occurrences are *not* de-duplicated: each is a separate claim to verify.
+    Occurrences are *not* de-duplicated: each is a separate claim to verify, and
+    each carries the form it was actually written in. Collapsing the link flag
+    across a marker let one link occurrence mark every occurrence as link text,
+    so a bare fabrication elsewhere in the response was never accused. The
+    collapse had been guarding against an order dependence that only existed
+    while extraction de-duplicated, which the occurrence model removed.
+
     Editorial asides such as ``[sic]`` are dropped, as is any bracketed text
-    containing spaces. The markdown-link flag is collapsed across every
-    occurrence of a marker, so classification does not depend on the order the
-    forms appear in.
+    containing spaces, and anything inside fenced or inline code.
     """
-    matches = [
-        match
-        for match in citation_pattern.finditer(output)
-        if match.group(1).lower() not in _EDITORIAL_MARKERS
-    ]
-    from_link: dict[str, bool] = {}
-    for match in matches:
+    code = _code_spans(output)
+    in_code = lambda pos: any(start <= pos < end for start, end in code)
+    citations: list[_Citation] = []
+    position = 0
+    for match in citation_pattern.finditer(output):
+        if match.group(1).lower() in _EDITORIAL_MARKERS or in_code(match.start()):
+            continue
         groups = match.groups()
-        key = match.group(1).lower()
-        from_link[key] = from_link.get(key, False) or (
-            len(groups) > 1 and bool(groups[1])
+        position += 1
+        citations.append(
+            _Citation(
+                marker=match.group(1),
+                from_link=len(groups) > 1 and bool(groups[1]),
+                index=position,
+                start=match.start(),
+                end=match.end(),
+            )
         )
-    return [
-        _Citation(
-            marker=match.group(1),
-            from_link=from_link[match.group(1).lower()],
-            index=position,
-            start=match.start(),
-            end=match.end(),
+    return citations
+
+
+def _rejected_source_labels(
+    context: str,
+    label_pattern: re.Pattern[str] = _SOURCE_LABEL_PATTERN,
+) -> set[str]:
+    """Line-leading labels that were excluded from :func:`_parse_source_blocks`.
+
+    Empty bodies and repeated labels are not citable, but they are still labels
+    the context declares. Without keeping them, a citation naming one fell
+    through to the shape filter and was classed as not a citation at all, so a
+    row citing a dropped label passed instead of being reported as partly
+    assessed.
+    """
+    matches = list(label_pattern.finditer(context))
+    keys = [match.group(1).lower() for match in matches]
+    rejected = {key for key in keys if keys.count(key) > 1}
+    for position, match in enumerate(matches):
+        start = match.end()
+        end = (
+            matches[position + 1].start()
+            if position + 1 < len(matches)
+            else len(context)
         )
-        for position, match in enumerate(matches, start=1)
-    ]
+        if not context[start:end].strip():
+            rejected.add(match.group(1).lower())
+    return rejected
 
 
 def _strip_occurrence_tags(text: str) -> str:
@@ -1080,6 +1138,7 @@ def _resolve_citations(
     """
     inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
     accusable = _accusable_signatures(blocks)
+    rejected = _rejected_source_labels(context)
     resolved: list[_Citation] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
@@ -1094,7 +1153,12 @@ def _resolve_citations(
             resolved.append(citation._replace(index=len(resolved) + 1))
             continue
         candidate = _is_fabrication_candidate(citation, accusable)
-        if accusable and not candidate:
+        if key in rejected:
+            # A label the context declares but this scorer could not use. Checked
+            # before the shape filter, which would otherwise class it as not a
+            # citation and let the row pass.
+            bucket = ambiguous
+        elif accusable and not candidate:
             # Shape is checked before inline presence, but only when there is a
             # structured label style to compare against. Testing presence first
             # made ordinary bracket notation copied out of the context
