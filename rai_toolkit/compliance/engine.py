@@ -365,6 +365,7 @@ class ComplianceMappingEngine:
                 "covered_ids": sorted(covered),
                 "missing_ids": sorted(required_mits - category_ids),
                 "capabilities": req.rai_capabilities,
+                "coverage_gaps": req.coverage_gaps,
             }
 
         return coverage

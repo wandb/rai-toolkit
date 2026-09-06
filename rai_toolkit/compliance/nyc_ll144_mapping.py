@@ -2,13 +2,46 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
-"""NYC Local Law 144 compliance mapping for automated employment decision tools.
+"""NYC Local Law 144 of 2021 compliance mapping for automated employment
+decision tools (AEDTs).
 
-Maps NYC LL 144 requirements (bias audits, notice, impact ratios) to
+Maps the obligations in NYC Admin. Code Sec. Sec. 20-870 through 20-874 and
+the DCWP implementing rule (6 RCNY Subchapter T, Sec. Sec. 5-300 to 5-304) to
 RAI toolkit capabilities and MIT risk categories.
 
-Source: NYC Local Law 144 of 2023 — Automated Employment Decision Tools.
-https://www.nyc.gov/site/ccl/rules/local-law-144.page
+Key facts encoded here (verified against the primary sources below):
+
+- It is unlawful for an employer or employment agency to use an AEDT in NYC
+  unless a bias audit was conducted no more than one year prior to use
+  (Sec. 20-871(a)(1); rule 5-301(a)). Audit currency is time-based only;
+  the law has no material-change re-audit trigger.
+- The audit (an impartial evaluation by an independent auditor) computes
+  selection rates (or scoring rates against the sample median) and impact
+  ratios for each EEO-1 Component 1 category: sex, race/ethnicity, and
+  intersectional categories (rule 5-301(b)-(c)). Neither the law nor the
+  rule sets a numeric impact-ratio compliance threshold (such as 0.8) and
+  DCWP states the law requires no specific action based only on audit
+  results.
+- A summary of the most recent audit results and the date the tool was
+  first distributed must be publicly posted on the employer's employment
+  section of its website, remaining posted for at least six months after
+  the latest use of the AEDT (Sec. 20-871(a)(2); rule 5-303).
+- Candidates and employees who reside in NYC must receive notice at least
+  10 business days before the AEDT is used, covering: that an AEDT will
+  be used, instructions for requesting an alternative selection process
+  or a reasonable accommodation under other laws (if available), and the
+  job qualifications and characteristics the tool will assess
+  (Sec. 20-871(b); rule 5-304).
+- Obligations fall on the employer or employment agency; the vendor that
+  created the tool is not responsible for the bias audit (DCWP FAQ). A
+  vendor may commission an audit of its own tool, but the employer
+  remains ultimately responsible.
+
+Sources:
+- Law text (Admin. Code ch. 5, subch. 25): https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin
+- DCWP rule (6 RCNY Subchapter T): https://rules.cityofnewyork.us/wp-content/uploads/2023/04/DCWP-NOA-for-Use-of-Automated-Employment-Decisionmaking-Tools-2.pdf
+- DCWP AEDT page: https://www.nyc.gov/site/dca/about/automated-employment-decision-tools.page
+- DCWP FAQ: https://www.nyc.gov/assets/dca/downloads/pdf/about/DCWP-AEDT-FAQ.pdf
 """
 
 from __future__ import annotations
@@ -18,15 +51,16 @@ from dataclasses import dataclass, field
 
 @dataclass
 class NYCLL144Requirement:
-    """A NYC LL 144 requirement with mapping to toolkit capabilities.
+    """A NYC LL 144 obligation with mapping to toolkit capabilities.
 
     Attributes:
         id: Requirement identifier.
-        section: NYC Administrative Code section reference.
+        section: NYC Administrative Code / rule section reference.
         title: Short title.
-        description: What the requirement mandates.
-        mit_category_ids: MIT risk categories that help address this requirement.
-        rai_capabilities: How the RAI toolkit helps with compliance.
+        description: What the law mandates.
+        mit_category_ids: MIT risk categories relevant to this obligation.
+        rai_capabilities: Implemented toolkit capabilities that assist here.
+        coverage_gaps: LL 144 obligations the toolkit does not implement.
     """
 
     id: str
@@ -35,129 +69,141 @@ class NYCLL144Requirement:
     description: str
     mit_category_ids: list[str] = field(default_factory=list)
     rai_capabilities: list[str] = field(default_factory=list)
+    coverage_gaps: list[str] = field(default_factory=list)
 
 
 NYC_LL_144_REQUIREMENTS: dict[str, NYCLL144Requirement] = {
     "NYC-LL144-1": NYCLL144Requirement(
         id="NYC-LL144-1",
-        section="Section 20-144(a)(1)",
-        title="Bias Audit — Annual Bias Assessment",
+        section="Section 20-871(a)(1); rule 5-301(a)",
+        title="Annual Bias Audit",
         description=(
-            "Employers and employment agencies must conduct an independent bias "
-            "audit of each automated employment decision tool (AEDT) used in the "
-            "city at least once every two years, prior to use or material "
-            "modification. The audit must assess the impact of the tool on "
-            "candidates across protected classes including race, sex, and "
-            "ethnicity."
+            "It is unlawful for an employer or employment agency to use an "
+            "automated employment decision tool (AEDT) in New York City "
+            "unless a bias audit was conducted no more than one year prior "
+            "to such use. The bias audit is an impartial evaluation by an "
+            "independent auditor that includes testing the AEDT for disparate "
+            "impact on EEO-1 Component 1 categories (sex, race, and "
+            "ethnicity)."
         ),
         mit_category_ids=[
             "MIT-1.1",  # Unfair discrimination and bias
             "MIT-1.3",  # Unequal performance across groups
         ],
         rai_capabilities=[
-            "FairnessJudge scorer evaluates demographic bias across protected classes",
-            "Bias benchmarks test impact ratios by category",
-            "Evaluation pipeline quantifies disparate impact with normalized scores",
+            "FairnessJudge scorer flags demographic bias and stereotyping "
+            "in AEDT outputs (MIT-1.1)",
+            "BBQ and BOLD example datasets provide demographic-split bias "
+            "benchmarks for evaluation runs",
+            "Evaluation pipeline aggregates per-scorer results for bias "
+            "evidence gathering",
+        ],
+        coverage_gaps=[
+            "Audits must be performed by an independent auditor; the "
+            "toolkit's LLM-judge scores are not an independent bias audit",
+            "The toolkit does not track audit dates or enforce the one-year "
+            "currency window",
         ],
     ),
     "NYC-LL144-2": NYCLL144Requirement(
         id="NYC-LL144-2",
-        section="Section 20-144(a)(2)",
-        title="Bias Audit — Impact Ratio Reporting",
+        section="Section 20-870 (definition of bias audit); rule 5-301(b)-(c)",
+        title="Impact Ratio Calculation and Reporting",
         description=(
-            "The bias audit must calculate and report impact ratios (selection "
-            "rates) for each protected category. An adverse impact threshold "
-            "of 0.8 (the '80% rule') is used to determine whether a protected "
-            "group is disproportionately affected by the AEDT."
+            "The bias audit must compute and report, for each EEO-1 "
+            "Component 1 category (sex, race/ethnicity, and intersectional "
+            "combinations), the selection rate (or, for scoring tools, the "
+            "scoring rate against the sample median) and the impact ratio "
+            "(the category's rate divided by the rate of the most-selected "
+            "or highest-scoring category). Categories representing less than "
+            "2% of the data may be excluded from impact-ratio calculations "
+            "with justification, but applicant counts and rates must still "
+            "be shown. Neither the law nor the rule establishes a numeric "
+            "impact-ratio threshold for compliance."
         ),
         mit_category_ids=[
             "MIT-1.1",  # Unfair discrimination and bias
             "MIT-1.3",  # Unequal performance across groups
         ],
         rai_capabilities=[
-            "FairnessJudge provides per-group performance metrics and impact ratios",
-            "Comparative evaluations track selection-rate disparities across versions",
-            "Scorer registry supports custom impact-ratio aggregation",
+            "BBQ example dataset is split across demographic categories for "
+            "per-group performance comparison (MIT-1.3)",
+            "Evaluation pipeline reports per-category scores that can feed "
+            "an external impact-ratio analysis",
+        ],
+        coverage_gaps=[
+            "The toolkit does not calculate selection rates, scoring rates, "
+            "or impact ratios; these are computed by the independent auditor",
+            "The toolkit does not model EEO-1 Component 1 category "
+            "taxonomies or the intersectional-category requirements",
+            "No four-fifths-rule or other numeric threshold is implemented; "
+            "the law sets none",
         ],
     ),
     "NYC-LL144-3": NYCLL144Requirement(
         id="NYC-LL144-3",
-        section="Section 20-144(b)",
-        title="Notice to Candidates",
+        section="Section 20-871(b); rule 5-304",
+        title="Candidate Notice",
         description=(
-            "Employers must provide clear notice to candidates that an AEDT "
-            "will be used in the assessment process. The notice must describe "
-            "the category of measurements or outputs the tool is designed to "
-            "evaluate and any available action to contest or opt out of the "
-            "assessment."
+            "Employers and employment agencies must give each NYC-resident "
+            "candidate or employee written notice at least 10 business days "
+            "before an AEDT is used. The notice must state that an AEDT will "
+            "be used in the assessment, include instructions for requesting "
+            "an alternative selection process or a reasonable accommodation "
+            "under other laws (if available), and describe the job "
+            "qualifications and characteristics the AEDT will assess. If "
+            "this data disclosure is not on the employer's website, the "
+            "employer must respond within 30 days to written requests about "
+            "the type of data the tool collects, its source, and the data "
+            "retention policy."
         ),
         mit_category_ids=[
+            "MIT-5.1",  # Overreliance and false transparency
             "MIT-7.2",  # Transparency and explainability
         ],
         rai_capabilities=[
-            "Transparency scorer evaluates whether system disclosures are adequate",
-            "Evaluation traces document what inputs the tool processes",
-            "Compliance reports include candidate-facing notices as audit artifacts",
+            "TransparencyJudge scorer checks that the system discloses its "
+            "nature and limitations to users (MIT-5.1)",
+            "Evaluation traces record the inputs and outputs the AEDT "
+            "processes, supporting the 30-day data-request response",
+        ],
+        coverage_gaps=[
+            "Notice delivery, 10-business-day timing, and accommodation "
+            "request workflows are employer-side process requirements the "
+            "toolkit does not implement",
+            "The toolkit does not manage the website data-disclosure "
+            "posting required by rule 5-304(d)",
         ],
     ),
     "NYC-LL144-4": NYCLL144Requirement(
         id="NYC-LL144-4",
-        section="Section 20-144(c)",
-        title="Publication of Bias Audit Results",
+        section="Section 20-871(a)(2); rule 5-303",
+        title="Publication of Audit Results",
         description=(
-            "Employers must make the bias audit results publicly available, "
-            "including the impact ratios by protected category, on the "
-            "employer's website or through another accessible means. Results "
-            "must be retained for at least two years."
+            "Before using an AEDT, the employer or employment agency must "
+            "publicly post on the employment section of its website the date "
+            "of the most recent bias audit and a summary of the results "
+            "(including the data source, the number of applicants or "
+            "candidates, selection or scoring rates, and impact ratios for "
+            "all categories), together with the date the AEDT was first "
+            "distributed. The summary must remain posted for at least six "
+            "months after the latest use of the AEDT."
         ),
         mit_category_ids=[
+            "MIT-5.1",  # Overreliance and false transparency
             "MIT-7.2",  # Transparency and explainability
-            "MIT-7.1",  # System failures and robustness
         ],
         rai_capabilities=[
-            "Compliance reports generate structured bias-audit documentation",
-            "Versioned evaluation traces preserve audit history for retention",
-            "Evaluation pipeline exports impact-ratio summaries in machine-readable format",
+            "Assessment reports document the scorers, thresholds, and "
+            "per-category results that can accompany a published audit "
+            "summary",
+            "Weave-traced evaluation runs preserve a versioned history of "
+            "bias-evaluation results",
         ],
-    ),
-    "NYC-LL144-5": NYCLL144Requirement(
-        id="NYC-LL144-5",
-        section="Section 20-144(a)(3)",
-        title="Material Changes — Re-Audit Requirement",
-        description=(
-            "A new bias audit must be conducted whenever a material change is "
-            "made to an AEDT that is reasonably likely to produce a different "
-            "impact ratio. This includes changes to the tool's algorithms, "
-            "training data, or the categories of data it evaluates."
-        ),
-        mit_category_ids=[
-            "MIT-1.1",  # Unfair discrimination and bias
-            "MIT-7.1",  # System failures and robustness
-        ],
-        rai_capabilities=[
-            "Comparative evaluations detect performance drift after model updates",
-            "Evaluation versioning tracks score changes across tool revisions",
-            "Bias benchmarks re-run automatically on material-change detection",
-        ],
-    ),
-    "NYC-LL144-6": NYCLL144Requirement(
-        id="NYC-LL144-6",
-        section="Section 20-144(d)",
-        title="Vendor Certification and Liability",
-        description=(
-            "AEDT vendors must certify to the employer that the tool has "
-            "undergone the required bias audit and provide the results. "
-            "Both the employer and the vendor may be held liable for "
-            "violations of the law."
-        ),
-        mit_category_ids=[
-            "MIT-7.2",  # Transparency and explainability
-            "MIT-2.2",  # Security and resilience
-        ],
-        rai_capabilities=[
-            "Evaluation reports can be shared with vendors as certification evidence",
-            "Trace and feedback workflows capture vendor-provided audit data",
-            "Compliance engine surfaces vendor-certification status in reports",
+        coverage_gaps=[
+            "The toolkit does not produce the statutory audit summary "
+            "(dates, applicant counts, rates, impact ratios) or manage the "
+            "six-month posting obligation",
         ],
     ),
 }
@@ -189,8 +235,6 @@ NYC_SECTION_DISPLAY_SUBTITLES: dict[str, str] = {
     "NYC-LL144-2": "Impact ratio reporting",
     "NYC-LL144-3": "Candidate notice",
     "NYC-LL144-4": "Publish audit results",
-    "NYC-LL144-5": "Re-audit on material change",
-    "NYC-LL144-6": "Vendor certification",
 }
 
 
@@ -200,7 +244,7 @@ def format_nyc_ll144_framework_label(
     section: str | None = None,
     title: str | None = None,
 ) -> str:
-    """Build a framework row label like ``NYC LL 144: Sec 20-144(a)(1) (Annual bias audit)``."""
+    """Build a framework row label like ``NYC LL 144: Sec 20-871(a)(1) (Annual bias audit)``."""
     section_label = section or requirement_id
     subtitle = NYC_SECTION_DISPLAY_SUBTITLES.get(requirement_id)
     if subtitle is None and title:

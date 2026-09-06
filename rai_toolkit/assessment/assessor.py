@@ -803,6 +803,33 @@ class Assessor:
         except Exception as e:
             logger.debug("EU AI Act coverage unavailable: %s", e)
 
+        try:
+            from rai_toolkit.compliance.nyc_ll144_mapping import (
+                format_nyc_ll144_framework_label,
+            )
+
+            nyc_cov = self.engine.get_nyc_ll144_coverage(profile)
+            for req_id, cov in nyc_cov.items():
+                assessments.append(
+                    _build_assessment(
+                        framework=format_nyc_ll144_framework_label(
+                            req_id,
+                            section=cov.get("section"),
+                            title=cov.get("title"),
+                        ),
+                        coverage=cov,
+                        eval_results=eval_results,
+                        na_note=(
+                            "No scorer-measurable categories for this requirement. "
+                            "NYC LL 144 obligations (bias audits, notice, publication) "
+                            "are employer-side duties; use this row to track the MIT "
+                            "categories that support them."
+                        ),
+                    )
+                )
+        except Exception as e:
+            logger.debug("NYC LL 144 coverage unavailable: %s", e)
+
         # Framework status reflects each framework's own scorer coverage and the
         # evaluation gate. Red-team hotness and policy hotness are surfaced via
         # their own dedicated verdict gates (red-team severity gate, policy
