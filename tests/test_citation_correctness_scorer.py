@@ -2013,6 +2013,64 @@ def test_the_prompt_does_not_ask_the_judge_to_score_fabrications() -> None:
     assert "Score only the citations listed above" in prompt
 
 
+MIXED_REPLY = {
+    "score": 3,
+    "explanation": "Both look fine to me.",
+    "verdicts": [
+        {
+            "occurrence": 1,
+            "outcome": "supported",
+            "claim_span": "Notices are required",
+            "context_span": "notices are required for denied applicants.",
+        },
+        {
+            "occurrence": 2,
+            "outcome": "supported",
+            "claim_span": "Criteria apply",
+            "context_span": "text that appears nowhere",
+        },
+    ],
+}
+MIXED_OUTPUT = "Notices are required [adverse-action]. Criteria apply [fair-lending]."
+
+
+@pytest.mark.parametrize("suffix", ["", " Bogus [reg-z-2024]."])
+def test_a_rejected_reply_reports_the_same_audit_trail_either_way(suffix: str) -> None:
+    # The record must not depend on whether a fabrication happened to be
+    # present: that has nothing to do with why the reply was rejected.
+    scorer = _scorer(MIXED_REPLY)
+
+    result = scorer.score(MIXED_OUTPUT + suffix, context=CONTEXT)
+
+    assert result.details["rejected_raw_score"] == 3
+    assert result.details["judge_explanation"] == "Both look fine to me."
+    assert result.details["discarded_evidence_spans"] == 1
+
+
+def test_a_verdict_that_verified_survives_an_unassessed_row() -> None:
+    # Previously the good verdict was discarded because its neighbour failed,
+    # so a reviewer could not see which citation the judge got right.
+    scorer = _scorer(MIXED_REPLY)
+
+    result = scorer.score(MIXED_OUTPUT, context=CONTEXT)
+
+    assert not result.assessed
+    kept = result.details["verified_verdicts"]
+    assert [v["occurrence"] for v in kept] == [1]
+    assert kept[0]["context_span"] == "notices are required for denied applicants."
+
+
+def test_an_unassessed_row_reports_no_graded_citations() -> None:
+    # The verdicts are audit material, not results. Populating the results keys
+    # would read as though the row had been graded.
+    scorer = _scorer(MIXED_REPLY)
+
+    result = scorer.score(MIXED_OUTPUT, context=CONTEXT)
+
+    assert result.details["supported_citations"] == []
+    assert result.details["misattributed_citations"] == []
+
+
 def test_a_rejected_reply_keeps_the_evidence_that_did_verify() -> None:
     context = "[doc-1] Real source text."
     scorer = _scorer(

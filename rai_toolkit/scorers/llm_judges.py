@@ -1470,6 +1470,8 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         ambiguous: list[str],
         ignored: list[str],
         verified: list[dict[str, Any]] | None = None,
+        judge_explanation: str = "",
+        discarded: int = 0,
         extra: dict[str, Any] | None = None,
     ) -> ScorerResult:
         """Result for an unusable judge reply, honouring a proven fabrication.
@@ -1478,7 +1480,22 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         reply must not turn that deterministic failure into a coverage gap.
         Every path that rejects a reply routes through here, which is what the
         non-object guard previously skipped.
+
+        Both branches carry the same audit trail. Whichever way the row lands,
+        someone reading the report needs the judge's own score and text, the
+        verdicts that did verify, and how many were thrown out; without them a
+        rejection says only that something was wrong. Attaching them to the
+        fabricated branch alone made the record depend on whether a fabrication
+        happened to be present, which has nothing to do with the reply.
         """
+        # Whatever did verify is still evidence, so it is reported rather than
+        # discarded because the reply as a whole was unusable.
+        graded = sorted(verified or [], key=lambda v: v["occurrence"])
+        audit: dict[str, Any] = {
+            "rejected_raw_score": _json_safe(raw_score),
+            "judge_explanation": judge_explanation,
+            "discarded_evidence_spans": discarded,
+        }
         if not fabricated:
             return self._unassessed(
                 reason,
@@ -1487,14 +1504,14 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
-                extra=extra,
+                # Reported under their own key rather than as
+                # ``supported_citations``: nothing here was assessed, and a
+                # populated results key would read as though it had been.
+                extra={**audit, "verified_verdicts": graded, **(extra or {})},
             )
         details = self._marker_details(
             fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
         )
-        # Whatever did verify is still evidence, so it is reported rather than
-        # discarded because the reply as a whole was unusable.
-        graded = sorted(verified or [], key=lambda v: v["occurrence"])
         details["supported_citations"] = [
             v for v in graded if v["outcome"] == "supported"
         ]
@@ -1502,10 +1519,10 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             v for v in graded if v["outcome"] == "misattributed"
         ]
         details.update(extra or {})
+        details.update(audit)
         details.update(
             {
                 "raw_score": None,
-                "rejected_raw_score": _json_safe(raw_score),
                 "floor_applied": True,
                 "judge_output_rejected": reason,
             }
@@ -1692,6 +1709,16 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         unverified = [c.marker for c in resolved if c.index not in verified]
         outcomes = [v["outcome"] for v in verified.values()]
         score_value = _valid_judge_score(result.get("score"))
+        discarded = raw_verdict_count - len(verified)
+
+        # Read before the checks below, not after: a rejected reply still has to
+        # report what the judge said. Only a string is carried through, because
+        # str() on the raw value put a Python repr into the report, so a reply of
+        # null read as the explanation "None" and a dict arrived as "{'a': 1}".
+        raw_explanation = result.get("explanation")
+        judge_explanation = (
+            raw_explanation if isinstance(raw_explanation, str) else ""
+        )
 
         # Nothing becomes an assessed score until the reply is usable, complete
         # and self-consistent. Each of these once produced a confident result for
@@ -1733,18 +1760,12 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 ambiguous=ambiguous,
                 ignored=ignored,
                 verified=list(verified.values()),
+                judge_explanation=judge_explanation,
+                discarded=discarded,
             )
 
         raw_score = score_value
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
-
-        # Only a string is carried through. str() on the raw value put a Python
-        # repr into the report, so a reply of null read as the explanation
-        # "None" and a dict arrived as "{'a': 1}".
-        raw_explanation = result.get("explanation")
-        judge_explanation = (
-            raw_explanation if isinstance(raw_explanation, str) else ""
-        )
         explanation = judge_explanation
         floor_applied = bool(fabricated)
         if floor_applied:
@@ -1783,7 +1804,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 "ambiguous_citations": ambiguous,
                 "ignored_markers": ignored,
                 "judge_explanation": judge_explanation,
-                "discarded_evidence_spans": raw_verdict_count - len(verified),
+                "discarded_evidence_spans": discarded,
             },
         )
 
