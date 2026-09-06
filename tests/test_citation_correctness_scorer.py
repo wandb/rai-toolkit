@@ -1997,6 +1997,20 @@ def test_a_malformed_reply_without_a_fabrication_stays_unassessed() -> None:
     assert result.details["skipped"] == "invalid_judge_output"
 
 
+def test_the_prompt_asks_for_evidence_unique_to_the_supporting_block() -> None:
+    # The verifier rejects a misattribution whose evidence the cited block also
+    # contains, so the judge has to be told to pick evidence that discriminates.
+    # Without it a correct verdict is rejected for its choice of quote and a real
+    # misattribution goes unreported.
+    output = "Notices are required [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    prompt = scorer._call_judge.call_args.args[1]
+    assert "appears **only** in that block" in prompt
+
+
 def test_the_prompt_does_not_ask_the_judge_to_score_fabrications() -> None:
     # The prompt told the judge to factor absent sources into the score while
     # the coherence rule expected a score reflecting only the resolved verdicts,

@@ -367,6 +367,9 @@ Return exactly one verdict per numbered citation. Evidence spans must be copied
 verbatim from the Context; do not paraphrase or use outside knowledge. For a
 misattributed citation, name the block that *actually* supports the claim in
 `supporting_marker` and quote from that block, not from the one that was cited.
+Choose a quote that appears **only** in that block: retrieved blocks often
+overlap, and text the cited block also contains cannot show which of them
+supports the claim.
 Quote the claim you graded in `claim_span`, copied verbatim from the Response
 without its occurrence tag.
 
