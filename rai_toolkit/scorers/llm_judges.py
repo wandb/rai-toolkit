@@ -22,6 +22,7 @@ from rai_toolkit import _tracing
 from rai_toolkit.prompts.judge_prompts import (
     CITATION_FABRICATED_BLOCK,
     CITATION_SCOPE_BLOCK,
+    CITATION_TAG_BLOCK,
     JUDGE_PROMPTS,
 )
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
@@ -839,8 +840,18 @@ _LABEL_SEPARATORS = ("-", ".", "_")
 
 # Occurrence tags shown to the judge. Chosen so the citation pattern cannot
 # match them: it requires an alphanumeric immediately after "[".
-_OCCURRENCE_OPEN = "\u27e6"
-_OCCURRENCE_CLOSE = "\u27e7"
+# Bracket pairs to tag occurrences with, tried in order. Rare in prose, but a
+# response about formal semantics or set notation can contain any of them, so the
+# pair is chosen per response rather than fixed.
+_OCCURRENCE_TAG_CANDIDATES = (
+    ("\u27e6", "\u27e7"),  # white square brackets
+    ("\u2e24", "\u2e25"),  # bottom half brackets
+    ("\u2985", "\u2986"),  # white parentheses
+    ("\u2989", "\u298a"),  # z notation binding brackets
+)
+# Private-use codepoints have no meaning in text, so a response that somehow
+# contained every candidate above still leaves these free.
+_OCCURRENCE_TAG_FALLBACK = range(0xE000, 0xF8FF)
 
 # Upper bound of the judge rubric, shared by validation and reporting.
 _JUDGE_SCORE_MAX = 3.0
@@ -1084,12 +1095,25 @@ def _rejected_source_labels(
     return rejected
 
 
-def _strip_occurrence_tags(text: str) -> str:
-    """Remove any occurrence-tag characters the response already contained."""
-    return text.replace(_OCCURRENCE_OPEN, "").replace(_OCCURRENCE_CLOSE, "")
+def _occurrence_tag(text: str) -> tuple[str, str]:
+    """Pick a tag delimiter pair that does not occur in ``text``.
+
+    Deleting a collision instead used to keep what sat between the delimiters, so
+    a response reading ``the rate is X1Y5%`` reached the judge as ``15%`` and the
+    judge graded a number the model never wrote. The response is never altered
+    now: a pair absent from it is chosen, so there is nothing to collide with.
+    """
+    for pair in _OCCURRENCE_TAG_CANDIDATES:
+        if pair[0] not in text and pair[1] not in text:
+            return pair
+    free = [chr(cp) for cp in _OCCURRENCE_TAG_FALLBACK if chr(cp) not in text]
+    # A finite response cannot exhaust 6400 codepoints, so this always yields.
+    return free[0], free[1]
 
 
-def _annotate_occurrences(output: str, citations: list[_Citation]) -> str:
+def _annotate_occurrences(
+    output: str, citations: list[_Citation], tag: tuple[str, str]
+) -> str:
     """Tag each citation in the response with its occurrence number.
 
     The judge reads the response as written, with an occurrence number attached
@@ -1098,17 +1122,17 @@ def _annotate_occurrences(output: str, citations: list[_Citation]) -> str:
     claim begins or ends. Deriving that boundary truncated mid-sentence
     citations and emptied ones that opened a sentence, so the judge would have
     been grading a fragment.
+
+    Purely additive: removing the inserted tags returns the response verbatim.
     """
+    open_, close = tag
     annotated: list[str] = []
     cursor = 0
     for citation in citations:
-        # Any tag characters already in the response are removed, so each
-        # citation carries exactly one and the judge cannot bind a verdict to a
-        # sequence the model happened to write itself.
-        annotated.append(_strip_occurrence_tags(output[cursor : citation.end]))
-        annotated.append(f"{_OCCURRENCE_OPEN}{citation.index}{_OCCURRENCE_CLOSE}")
+        annotated.append(output[cursor : citation.end])
+        annotated.append(f"{open_}{citation.index}{close}")
         cursor = citation.end
-    annotated.append(_strip_occurrence_tags(output[cursor:]))
+    annotated.append(output[cursor:])
     return "".join(annotated)
 
 
@@ -1389,6 +1413,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         context: str = "",
         resolved: str = "",
         fabricated: str = "",
+        tag: tuple[str, str] | None = None,
     ) -> str:
         """Standard judge prompt, scoped to the citations Python resolved.
 
@@ -1399,12 +1424,18 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         holistic score, so an ungraded marker it disliked still drags the number
         down.
 
+        ``tag`` names the delimiters the occurrence numbers were written with.
+        They are chosen per response rather than fixed, so the prompt has to say
+        which pair was used instead of describing one it cannot guarantee.
+
         Formatted in two stages on purpose. The base template escapes the braces
         of its JSON example, and ``super()`` collapses them to single braces; a
         second ``.format()`` pass over that string would read them as fields and
         raise. So each appended block is formatted separately.
         """
         base = super()._format_prompt(output=output, input=input, context=context)
+        if tag:
+            base += CITATION_TAG_BLOCK.format(open=tag[0], close=tag[1])
         if resolved:
             base += CITATION_SCOPE_BLOCK.format(resolved=resolved)
         if fabricated:
@@ -1628,8 +1659,10 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
             )
 
         prompts = self._get_prompts()
+        tag = _occurrence_tag(output)
         user_prompt = self._format_prompt(
-            output=_annotate_occurrences(output, resolved),
+            output=_annotate_occurrences(output, resolved, tag),
+            tag=tag,
             input=input,
             context=context,
             resolved="\n".join(

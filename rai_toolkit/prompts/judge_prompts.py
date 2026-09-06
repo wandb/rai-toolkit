@@ -351,8 +351,8 @@ CITATION_CORRECTNESS_TEMPLATE = """Grade whether each cited claim is supported b
 **AI Response:** {output}
 
 Every citation in the Response is tagged with its occurrence number, written
-immediately after the marker as \u27e6n\u27e7. Read the Response normally; the tags
-identify which citation each verdict refers to. For each numbered citation,
+immediately after the marker. Read the Response normally; the tags identify
+which citation each verdict refers to. For each numbered citation,
 decide whether the block it names supports the claim it is attached to. A claim
 supported somewhere else in the Context but attributed to the wrong block is
 **misattributed**, not supported.
@@ -379,6 +379,13 @@ Respond in JSON format:
     {{"occurrence": <number>, "outcome": "misattributed", "claim_span": "<exact claim text from the Response>", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}}
   ]
 }}"""
+
+CITATION_TAG_BLOCK = """
+
+The occurrence tag is written {open}n{close}, so the first citation is tagged
+{open}1{close}. These characters appear nowhere else in the Response; they were
+chosen for this response so that nothing the model wrote can be mistaken for a
+tag, and nothing it wrote had to be altered to make room for one."""
 
 CITATION_SCOPE_BLOCK = """
 

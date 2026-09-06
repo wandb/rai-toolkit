@@ -10,8 +10,10 @@ import pytest
 
 from rai_toolkit.assessment.assessor import _classify_unassessed_reason
 from rai_toolkit.scorers.llm_judges import (
+    _OCCURRENCE_TAG_CANDIDATES,
     CitationCorrectnessScorer,
     _extract_citations,
+    _occurrence_tag,
     _parse_source_blocks,
     _resolve_citations,
 )
@@ -1709,17 +1711,65 @@ def test_new_judge_failures_are_named_in_the_coverage_report() -> None:
 # --- adversarial sweep: cases found by probing rather than reported ---
 
 
-def test_occurrence_tags_already_in_the_response_are_stripped() -> None:
-    # A response containing the tag characters produced two identical tags, so
-    # the judge could bind a verdict to a sequence the model wrote itself.
-    output = "Alpha claim ⟦1⟧ is prior text [fair-lending]."
+@pytest.mark.parametrize(
+    "output",
+    [
+        # Deleting the delimiters used to keep what sat between them, turning a
+        # rate of 5% into one of 15%.
+        "The rate is ⟦1⟧5% [fair-lending].",
+        "Costs rose ⟦2⟧0% last year [fair-lending].",
+        "Set A ⟦x⟧ B is the range [fair-lending].",
+        "Alpha claim ⟦1⟧ is prior text [fair-lending].",
+    ],
+)
+def test_annotation_never_alters_the_response(output: str) -> None:
     scorer = _covering_scorer(output, CONTEXT)
 
     scorer.score(output, context=CONTEXT)
 
     prompt = scorer._call_judge.call_args.args[1]
-    assert "Alpha claim 1 is prior text [fair-lending]⟦1⟧." in prompt
-    assert prompt.count("⟦1⟧") == 1
+    open_, close = _occurrence_tag(output)
+    # Removing only what was inserted must give the response back verbatim.
+    injected = re.compile(re.escape(open_) + r"\d+" + re.escape(close))
+    annotated = next(
+        line
+        for line in prompt.splitlines()
+        if "[fair-lending]" in line and open_ in line
+    ).split("**AI Response:** ", 1)[-1]
+    assert injected.sub("", annotated) == output
+
+
+def test_a_colliding_delimiter_is_not_used() -> None:
+    # The tag is chosen per response, so a model writing the default pair does
+    # not force either a collision or an edit to its text.
+    output = "Alpha claim ⟦1⟧ is prior text [fair-lending]."
+
+    open_, close = _occurrence_tag(output)
+
+    assert open_ not in output and close not in output
+    assert (open_, close) != ("⟦", "⟧")
+
+
+def test_the_prompt_states_which_delimiters_were_used() -> None:
+    # The judge cannot be told about a fixed tag when the tag is not fixed.
+    output = "Alpha claim ⟦1⟧ is prior text [fair-lending]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    open_, close = _occurrence_tag(output)
+    prompt = scorer._call_judge.call_args.args[1]
+    assert f"{open_}n{close}" in prompt
+    assert f"{open_}1{close}" in prompt
+
+
+def test_a_tag_is_found_even_when_every_candidate_collides() -> None:
+    crowded = "".join(c for pair in _OCCURRENCE_TAG_CANDIDATES for c in pair)
+
+    open_, close = _occurrence_tag(crowded)
+
+    assert open_ not in crowded and close not in crowded
+    assert open_ != close
 
 
 @pytest.mark.parametrize("occurrence", [True, False, 1.0, "1", None])
