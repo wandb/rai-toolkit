@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 from rai_toolkit.scorers.base import ScorerResult
 
 
@@ -32,9 +34,19 @@ class ScoreNormalizer:
 
         Returns:
             Normalized score between 0.0 and 1.0.
+
+        Raises:
+            ValueError: If either argument is non-finite, or max_value is not
+                positive. Non-finite values are rejected rather than clamped:
+                ``min(1.0, nan)`` returns ``1.0``, so a malformed judge score
+                would otherwise silently become a perfect, passing score.
         """
+        if not math.isfinite(max_value):
+            raise ValueError(f"max_value must be finite, got {max_value}")
         if max_value <= 0:
             raise ValueError(f"max_value must be positive, got {max_value}")
+        if not math.isfinite(raw_score):
+            raise ValueError(f"raw_score must be finite, got {raw_score}")
         normalized = max(0.0, min(1.0, raw_score / max_value))
         return 1.0 - normalized if invert else normalized
 
