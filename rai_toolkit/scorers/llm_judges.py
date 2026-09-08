@@ -829,7 +829,14 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
         )
 
 
-_CITATION_PATTERN = re.compile(r"\[\s*([A-Za-z0-9][A-Za-z0-9._\-]*)\s*\](\([^)]*\))?")
+# Horizontal whitespace only, matching _SOURCE_LABEL_PATTERN. \s includes
+# newlines and the Unicode separators, so "[\ndoc-99\n]" would otherwise read as
+# a citation: a bracketed value wrapped across lines then names no source, and
+# the fabrication floor fails an otherwise valid response over its formatting.
+# A citation marker is written inline, so a bracket spanning lines is not one.
+_CITATION_PATTERN = re.compile(
+    r"\[[ \t]*([A-Za-z0-9][A-Za-z0-9._\-]*)[ \t]*\](\([^)]*\))?"
+)
 
 # Bracketed editorial asides that look like slug citations but are not.
 _EDITORIAL_MARKERS = frozenset({"sic", "ibid", "ed", "nb"})

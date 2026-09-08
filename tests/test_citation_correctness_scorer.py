@@ -11,6 +11,7 @@ import pytest
 from rai_toolkit.assessment.assessor import _classify_unassessed_reason
 from rai_toolkit.scorers.llm_judges import (
     _CITATION_PATTERN,
+    _SOURCE_LABEL_PATTERN,
     _OCCURRENCE_TAG_CANDIDATES,
     CitationCorrectnessScorer,
     _extract_citations,
@@ -1950,6 +1951,58 @@ def test_word_like_markers_are_still_accused(label: str, marker: str) -> None:
 
     assert result.score == 0.0
     assert result.details["fabricated_citations"] == [marker]
+
+
+# \s matches newline, carriage return, form feed, vertical tab and the Unicode
+# separators. A marker is written inline, so a bracket whose halves sit on
+# different lines is some other structure, not a citation.
+VERTICAL_WHITESPACE = ["\n", "\r", "\f", "\v", "\u00a0", "\u2028", "\u3000"]
+
+
+@pytest.mark.parametrize("ws", VERTICAL_WHITESPACE)
+def test_a_bracket_spanning_whitespace_is_not_a_citation(ws: str) -> None:
+    citations = _extract_citations(f"Claim [{ws}doc-99{ws}].")
+
+    assert citations == []
+
+
+@pytest.mark.parametrize("ws", VERTICAL_WHITESPACE)
+def test_a_bracket_spanning_whitespace_is_not_a_source_label(ws: str) -> None:
+    # The other path: the same class of input reaching the context parser.
+    assert _parse_source_blocks(f"[{ws}doc-1] Real source text here.") == {}
+
+
+@pytest.mark.parametrize("marker", ["[doc-1]", "[ doc-1 ]", "[\tdoc-1\t]"])
+def test_horizontal_whitespace_around_a_marker_still_reads(marker: str) -> None:
+    citations = _extract_citations(f"Claim {marker}.")
+
+    assert [c.marker for c in citations] == ["doc-1"]
+
+
+def test_a_wrapped_bracket_does_not_fail_a_valid_response() -> None:
+    # The cost of the old pattern: a bracketed value wrapped across lines was
+    # read as a citation naming no source, so the floor failed a response whose
+    # only real citation was correct.
+    output = (
+        "Notices are required [adverse-action].\n\n"
+        "The config lists the retired ids:\n[\nreg-z-2024\n]\n"
+    )
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+    assert result.details["fabricated_citations"] == []
+
+
+def test_the_two_patterns_agree_on_whitespace() -> None:
+    # They read the same bracket syntax on either side of the row, so a
+    # divergence here means a marker and its label can disagree about what
+    # counts as one token.
+    assert "\\s" not in _CITATION_PATTERN.pattern
+    assert "\\s" not in _SOURCE_LABEL_PATTERN.pattern.split("(?=")[0]
+
 
 
 def test_source_shaped_tokens_inside_code_are_not_citations() -> None:
