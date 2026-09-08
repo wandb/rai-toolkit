@@ -68,6 +68,9 @@ garak = [
     # attribute walk.
     "torchvision>=0.20.0",
 ]
+anthropic = [
+    "anthropic>=0.40.0",
+]
 demo = [
     "streamlit>=1.57.0",
     "plotly>=6.0.0",
@@ -83,7 +86,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
 ]
 all = [
-    "rai-toolkit[weave,scorers,nemo,demo,dev,datasets,pyrit,garak]",
+    "rai-toolkit[weave,scorers,nemo,demo,dev,datasets,pyrit,garak,anthropic]",
 ]
 
 [project.urls]

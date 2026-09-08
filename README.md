@@ -285,6 +285,9 @@ pip install -e ".[pyrit]"
 # Garak red-team integration
 pip install -e ".[garak]"
 
+# Anthropic Messages API model adapter
+pip install -e ".[anthropic]"
+
 # Everything (incl. demo Streamlit app + dev tooling)
 pip install -e ".[all]"
 ```
@@ -304,6 +307,46 @@ git URL (e.g. `git+https://github.com/wandb/rai-toolkit.git@v0.1.0`).
 
 The Python import path is `rai_toolkit` (e.g. `from rai_toolkit import Assessor`)
 regardless of which install method you use.
+
+### Model adapters
+
+The toolkit ships vendor-neutral model adapters under `rai_toolkit.models`.
+Both expose a shared `BaseModel` / `ModelResponse` contract, so you can swap
+providers without changing your assessment code.
+
+```bash
+# Anthropic Messages API adapter (optional extra)
+pip install -e ".[anthropic]"
+```
+
+```python
+import asyncio
+
+from rai_toolkit.models import AnthropicModel
+
+
+async def main() -> None:
+    model = AnthropicModel(
+        model="claude-sonnet-4-5",
+        # No api_key? The Anthropic SDK falls back to ANTHROPIC_API_KEY.
+        system_prompt="You are a triage assistant.",
+        max_tokens=1024,  # positive default; override per call below
+    )
+    result = await model.predict(
+        "Review this answer.",
+        context="Retrieved policy text",
+        max_tokens=2048,
+    )
+    print(result.output)
+    print(result.metadata)
+
+
+asyncio.run(main())
+```
+
+The optional key is never substituted: when `api_key` is omitted, key
+resolution is left entirely to the Anthropic SDK (e.g. the
+`ANTHROPIC_API_KEY` environment variable).
 
 Running fully self-hosted or air-gapped? See [docs/self_hosted.md](docs/self_hosted.md).
 
@@ -465,7 +508,7 @@ rai_toolkit/
   assessment/         End-to-end Assessor workflow + HTML report
   workflow/              Review gate: profile, scoping, submission,
                          decisions, ManualFinding from interactive probing
-  models/                BaseModel + OpenAI-compatible adapter
+  models/                BaseModel + OpenAI-compatible + Anthropic adapters
   cli.py                 `rai` command
 
 integrations/
@@ -521,6 +564,7 @@ documents the licenses declared by each dependency in `pyproject.toml`.
 | [nemoguardrails](https://github.com/NVIDIA/NeMo-Guardrails) | 0.21.0 | Apache-2.0 | `nemo` |
 | [pyrit](https://github.com/microsoft/PyRIT) | 0.13.0 | MIT | `pyrit` |
 | [garak](https://github.com/NVIDIA/garak) | 0.15.0 | Apache-2.0 | `garak` |
+| [anthropic](https://github.com/anthropics/anthropic-sdk-python) | 0.40.0 | MIT | `anthropic` |
 | [torchvision](https://github.com/pytorch/vision) | 0.20.0 | BSD-3-Clause | `garak` |
 | [streamlit](https://github.com/streamlit/streamlit) | 1.57.0 | Apache-2.0 | `demo` |
 | [plotly](https://github.com/plotly/plotly.py) | 6.0.0 | MIT | `demo` |
