@@ -2005,6 +2005,95 @@ def test_the_two_patterns_agree_on_whitespace() -> None:
 
 
 
+# Every code form a response can reach for. A marker inside any of them is
+# notation: it names no source, so if it resembles the context's labels the
+# fabrication floor fails a response whose only real citation was correct.
+CODE_FORMS = {
+    "single_backtick": "`[reg-z-2024]`",
+    "double_backtick": "``[reg-z-2024]``",
+    "triple_backtick_inline": "```[reg-z-2024]```",
+    "closed_fence": "\n```\n[reg-z-2024]\n```\n",
+    "fence_with_language": "\n```python\n[reg-z-2024]\n```\n",
+    "long_fence": "\n````\n[reg-z-2024]\n````\n",
+    "tilde_fence": "\n~~~\n[reg-z-2024]\n~~~\n",
+    "tilde_fence_with_language": "\n~~~python\n[reg-z-2024]\n~~~\n",
+    "unclosed_backtick_fence": "\n```\n[reg-z-2024]",
+    "unclosed_tilde_fence": "\n~~~\n[reg-z-2024]",
+}
+
+
+@pytest.mark.parametrize("form", sorted(CODE_FORMS), ids=sorted(CODE_FORMS))
+def test_a_marker_inside_code_is_not_a_citation(form: str) -> None:
+    output = f"Notices are required [adverse-action]. {CODE_FORMS[form]}"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+@pytest.mark.parametrize("form", sorted(CODE_FORMS), ids=sorted(CODE_FORMS))
+def test_code_does_not_fail_an_otherwise_valid_response(form: str) -> None:
+    output = f"Notices are required [adverse-action]. {CODE_FORMS[form]}"
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+    assert result.details["fabricated_citations"] == []
+
+
+# The other direction: a real citation must survive text that only resembles
+# code. Over-excluding is quieter than under-excluding but loses coverage.
+PROSE_WITH_CODEISH_TEXT = {
+    "stray_backtick": "Use ` as a delimiter.",
+    "strikethrough": "This is ~~struck~~ text.",
+    "two_tildes_only": "\n~~\nnot a fence\n~~\n",
+    "fence_not_at_line_start": "See ``` for fences.",
+    "closed_fence_before": "\n```\ncode\n```\n",
+    "inline_span_before": "The `config` file.",
+}
+
+
+@pytest.mark.parametrize(
+    "prose", sorted(PROSE_WITH_CODEISH_TEXT), ids=sorted(PROSE_WITH_CODEISH_TEXT)
+)
+def test_code_like_prose_does_not_swallow_a_real_citation(prose: str) -> None:
+    output = f"{PROSE_WITH_CODEISH_TEXT[prose]} Notices are required [adverse-action]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_fence_opened_mid_line_is_still_code_when_it_closes() -> None:
+    output = "Notices are required [adverse-action]. ```\nlookup [reg-z-2024]\n```"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_mid_line_run_that_never_closes_does_not_swallow_citations() -> None:
+    # Only a fence opening a line may run to the end of the response. A stray
+    # run in prose must not hide every citation after it.
+    output = "See ``` for fences.\nMore prose.\nNotices are required [adverse-action]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_an_unclosed_fence_covers_the_rest_of_the_response() -> None:
+    # Deliberate: an unclosed fence runs to the end of the text, which is how
+    # every Markdown renderer treats it. A marker after it is code, not prose.
+    output = "Notices are required [adverse-action].\n```\nlater [reg-z-2024]"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
 def test_source_shaped_tokens_inside_code_are_not_citations() -> None:
     context = "[doc-1] Real source text."
     output = (

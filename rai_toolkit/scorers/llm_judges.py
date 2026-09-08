@@ -1025,16 +1025,51 @@ def _is_fabrication_candidate(
     return _marker_signature(citation.marker) in accusable_signatures
 
 
+# A fence opens with three or more backticks or tildes at the start of a line
+# and closes with a run of the same character. Tildes are what a writer reaches
+# for when the code itself contains backticks. The closing fence is optional:
+# a response truncated mid-block leaves one open, and the code before the cut is
+# still code.
+_FENCED_CODE_PATTERN = re.compile(
+    # Opening a line: may close with a matching fence or run to the end of the
+    # response. A reply truncated mid-block leaves one open, and the code
+    # before the cut is still code.
+    r"^[ \t]*(?P<fence>`{3,}|~{3,})[^\n]*"
+    r"(?:\n.*?)??"
+    r"(?:^[ \t]*(?P=fence)[ \t]*$|\Z)"
+    # Opened mid-line: must be closed. Running to the end of the response here
+    # would let a stray run in prose ("see ``` for fences") swallow every
+    # citation after it.
+    r"|(?P<midline>`{3,}|~{3,})[^\n]*\n.*?^[ \t]*(?P=midline)[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
+
+# An inline span opens with a run of backticks and closes with a run of the same
+# length, so ``x`` is one span rather than two empty ones either side of x.
+_INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?:(?!(?P=ticks))[^\n])*(?P=ticks)")
+
+
 def _code_spans(text: str) -> list[tuple[int, int]]:
     """Ranges covered by fenced or inline code.
 
-    A source-shaped token inside code is notation, not a citation. Spans are
-    returned rather than the text stripped, so marker offsets stay valid for
-    annotation.
+    A source-shaped token inside code is notation, not a citation. Missing one
+    of these forms is expensive rather than merely incomplete: the marker names
+    no source, and if it resembles the context's labels the fabrication floor
+    fails a response whose only real citation was correct.
+
+    Spans are returned rather than the text stripped, so marker offsets stay
+    valid for annotation.
+
+    Fences are resolved first and inline spans are only sought outside them, so
+    a backtick run inside a fenced block is not read as an inline span.
     """
-    spans: list[tuple[int, int]] = []
-    for match in re.finditer(r"```.*?```|`[^`\n]*`", text, re.DOTALL):
-        spans.append((match.start(), match.end()))
+    spans: list[tuple[int, int]] = [
+        (match.start(), match.end()) for match in _FENCED_CODE_PATTERN.finditer(text)
+    ]
+    fenced = list(spans)
+    for match in _INLINE_CODE_PATTERN.finditer(text):
+        if not any(start <= match.start() < end for start, end in fenced):
+            spans.append((match.start(), match.end()))
     return spans
 
 
