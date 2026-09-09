@@ -9,11 +9,15 @@ from unittest.mock import Mock
 import pytest
 
 from rai_toolkit.assessment.assessor import _classify_unassessed_reason
+from rai_toolkit.scorers import llm_judges
+from rai_toolkit.scorers.base import ScorerResult
 from rai_toolkit.scorers.llm_judges import (
     _CITATION_PATTERN,
-    _SOURCE_LABEL_PATTERN,
     _OCCURRENCE_TAG_CANDIDATES,
+    _OCCURRENCE_TAG_FALLBACK,
+    _SOURCE_LABEL_PATTERN,
     CitationCorrectnessScorer,
+    _annotate_occurrences,
     _extract_citations,
     _occurrence_tag,
     _parse_source_blocks,
@@ -1776,10 +1780,96 @@ def test_no_candidate_tag_can_be_read_as_a_citation() -> None:
 def test_a_tag_is_found_even_when_every_candidate_collides() -> None:
     crowded = "".join(c for pair in _OCCURRENCE_TAG_CANDIDATES for c in pair)
 
-    open_, close = _occurrence_tag(crowded)
+    tag = _occurrence_tag(crowded)
 
+    assert tag is not None
+    open_, close = tag
     assert open_ not in crowded and close not in crowded
     assert open_ != close
+
+
+def _exhaust_single_characters() -> str:
+    """A response containing every single character the tag search can offer."""
+    return "".join(c for pair in _OCCURRENCE_TAG_CANDIDATES for c in pair) + "".join(
+        chr(cp) for cp in _OCCURRENCE_TAG_FALLBACK
+    )
+
+
+def test_exhausting_every_single_character_does_not_raise() -> None:
+    # The named pairs and the private-use range are a finite supply, and a
+    # response is free to contain all of them. The previous version asserted
+    # otherwise in a comment and raised IndexError.
+    tag = _occurrence_tag(_exhaust_single_characters())
+
+    assert tag is not None
+
+
+@pytest.mark.parametrize("width", [1, 2, 3, 8])
+def test_the_tag_lengthens_past_any_run_the_response_contains(width: int) -> None:
+    # Repetition cannot be exhausted: a finite text has a longest run of a given
+    # character, and one more than that appears nowhere in it.
+    text = _exhaust_single_characters() + "".join(
+        c * width for pair in _OCCURRENCE_TAG_CANDIDATES for c in pair
+    )
+
+    tag = _occurrence_tag(text)
+
+    assert tag is not None
+    assert tag[0] not in text and tag[1] not in text
+
+
+def test_an_exhausted_response_is_still_graded() -> None:
+    # Coverage matters: a response containing unusual characters must not lose
+    # its citation grading to a parser limit.
+    output = _exhaust_single_characters() + " Notices are required [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+
+
+def test_annotation_round_trips_with_a_lengthened_tag() -> None:
+    output = _exhaust_single_characters() + " Notices are required [adverse-action]."
+
+    tag = _occurrence_tag(output)
+    assert tag is not None
+    annotated = _annotate_occurrences(output, _extract_citations(output), tag)
+
+    injected = re.compile(re.escape(tag[0]) + r"\d+" + re.escape(tag[1]))
+    assert injected.sub("", annotated) == output
+
+
+def test_no_constructible_tag_is_an_unassessed_row_not_an_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The search makes this unreachable; the caller handles it anyway, because
+    # the bug this replaces came from trusting an invariant instead of it.
+    monkeypatch.setattr(llm_judges, "_occurrence_tag", lambda text: None)
+    output = "Notices are required [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "no_occurrence_tag"
+    assert scorer._call_judge.call_count == 0
+
+
+def test_the_no_tag_reason_renders_in_the_coverage_report() -> None:
+    reason = _classify_unassessed_reason(
+        ScorerResult(
+            score=0.0,
+            passed=False,
+            category="MIT-3.1",
+            explanation="Un-assessed: no occurrence tag could be constructed.",
+            details={"skipped": "no_occurrence_tag"},
+            assessed=False,
+        )
+    )
+
+    assert reason == "no citation tag could be constructed for this response"
 
 
 @pytest.mark.parametrize("occurrence", [True, False, 1.0, "1", None])
