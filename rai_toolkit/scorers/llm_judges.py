@@ -856,8 +856,9 @@ _OCCURRENCE_TAG_CANDIDATES = (
     ("\u2985", "\u2986"),  # white parentheses
     ("\u2989", "\u298a"),  # z notation binding brackets
 )
-# Private-use codepoints have no meaning in text, so a response that somehow
-# contained every candidate above still leaves these free.
+# Private-use codepoints have no meaning in text, so they are tried once the
+# named pairs are taken. They are finite, so they are a preference rather than a
+# guarantee: :func:`_occurrence_tag` lengthens the tag when they run out.
 _OCCURRENCE_TAG_FALLBACK = range(0xE000, 0xF8FF)
 
 # Upper bound of the judge rubric, shared by validation and reporting.
@@ -1137,20 +1138,43 @@ def _rejected_source_labels(
     return rejected
 
 
-def _occurrence_tag(text: str) -> tuple[str, str]:
+def _occurrence_tag(text: str) -> tuple[str, str] | None:
     """Pick a tag delimiter pair that does not occur in ``text``.
 
     Deleting a collision instead used to keep what sat between the delimiters, so
     a response reading ``the rate is X1Y5%`` reached the judge as ``15%`` and the
     judge graded a number the model never wrote. The response is never altered
     now: a pair absent from it is chosen, so there is nothing to collide with.
+
+    Single characters are a finite supply - four named pairs and the private-use
+    range - and a response is free to contain all of them. Once they are spent
+    the delimiters are lengthened by repetition, which cannot be exhausted: any
+    finite text has a longest run of a given character, so one repetition more
+    than that appears nowhere in it.
+
+    Returns ``None`` only if no tag could be built, which the search above makes
+    unreachable. The caller still handles it, because the previous version
+    asserted its own invariant in a comment and raised ``IndexError`` when a
+    response falsified it.
     """
     for pair in _OCCURRENCE_TAG_CANDIDATES:
         if pair[0] not in text and pair[1] not in text:
             return pair
+
     free = [chr(cp) for cp in _OCCURRENCE_TAG_FALLBACK if chr(cp) not in text]
-    # A finite response cannot exhaust 6400 codepoints, so this always yields.
-    return free[0], free[1]
+    if len(free) >= 2:
+        return free[0], free[1]
+
+    # Every single character is taken. Lengthen instead: the shortest run that
+    # the response does not already contain is bounded by its own length.
+    for opener, closer in _OCCURRENCE_TAG_CANDIDATES:
+        width = 2
+        while width <= len(text) + 1:
+            tag = (opener * width, closer * width)
+            if tag[0] not in text and tag[1] not in text:
+                return tag
+            width += 1
+    return None
 
 
 def _annotate_occurrences(
@@ -1719,6 +1743,19 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
 
         prompts = self._get_prompts()
         tag = _occurrence_tag(output)
+        if tag is None:
+            # Unreachable while the search lengthens, but the row degrades to a
+            # named coverage gap rather than an exception either way: the judge
+            # cannot be asked about occurrences it has no way to refer to.
+            return self._unassessed(
+                "no_occurrence_tag",
+                "Un-assessed: no occurrence tag could be constructed that the "
+                "response does not already contain, so citations could not be "
+                "identified to the judge.",
+                fabricated=fabricated,
+                ambiguous=ambiguous,
+                ignored=ignored,
+            )
         user_prompt = self._format_prompt(
             output=_annotate_occurrences(output, resolved, tag),
             tag=tag,

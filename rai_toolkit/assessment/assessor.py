@@ -1693,6 +1693,8 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "cited sources could not be resolved"
     if "skipped" in details and details["skipped"] == "unsupported_label_style":
         return "source labels are not distinguishable from ordinary text"
+    if "skipped" in details and details["skipped"] == "no_occurrence_tag":
+        return "no citation tag could be constructed for this response"
     if "skipped" in details and details["skipped"] == "invalid_judge_output":
         return "the judge returned unusable output"
     if "skipped" in details and details["skipped"] == "incomplete_judge_verdicts":
