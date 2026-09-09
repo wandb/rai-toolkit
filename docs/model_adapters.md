@@ -47,7 +47,9 @@ With an empty `context` — the default — that means `input_text` is passed ve
 
 **An empty `context` must not create a synthetic context block.** `context=""` is the default and means "no retrieval happened". Emitting an empty `retrieved_context` field, or an empty "Retrieved context:" block, tells the model a retrieval returned nothing, which is a different claim from not having retrieved at all, and it changes behaviour.
 
-**`**kwargs` carries per-call overrides** of the adapter's own configured defaults (`temperature`, `max_tokens`, and the like). Validate them with the same rules the constructor uses, and reject bad values rather than passing them through to the provider.
+**`**kwargs` carries per-call overrides** of the adapter's own configured defaults. Today each built-in adapter reads exactly one key and silently ignores every other: `OpenAICompatibleModel` reads `temperature`, and `AnthropicModel` reads `max_tokens`. Unrecognized keys are dropped rather than forwarded to the provider, so a misspelled override fails silently — check the adapter you are calling before relying on one.
+
+An adapter that does read a key validates it with the same rule its constructor uses: `AnthropicModel` runs a per-call `max_tokens` through `_coerce_max_tokens`, so an invalid value raises `ValueError` before the request is built. A general `**kwargs` API — an agreed set of overrides and rejection of unknown or invalid keys — is follow-up work tracked in [#63](https://github.com/wandb/rai-toolkit/issues/63). A new adapter should not invent its own until that lands.
 
 `predict` returns a `ModelResponse`, never a bare string, `None`, or a provider object.
 

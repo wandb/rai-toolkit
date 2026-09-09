@@ -11,6 +11,7 @@ from typing import Any, ClassVar
 import pytest
 
 from rai_toolkit.models import openai_compatible
+from tests.model_adapter_contract import ModelAdapterContractTests
 
 
 class FakeCompletions:
@@ -240,3 +241,37 @@ def test_from_args_normalizes_optional_values_and_temperature(
     assert model.temperature == expected["temperature"]
     assert model.name == expected["name"]
     assert latest_client().kwargs == expected["client_kwargs"]
+
+
+class TestOpenAICompatibleContract(ModelAdapterContractTests):
+    """Run the shared adapter conformance suite against this adapter."""
+
+    adapter_module = openai_compatible
+    secret_values = ("secret-test-key",)
+
+    def make_adapter(self) -> openai_compatible.OpenAICompatibleModel:
+        return openai_compatible.OpenAICompatibleModel(
+            model="local-model",
+            base_url="http://localhost:8000/v1",
+            api_key="secret-test-key",
+        )
+
+    def provider_calls(
+        self, adapter: openai_compatible.OpenAICompatibleModel
+    ) -> list[dict[str, Any]]:
+        return adapter._client.completions.calls
+
+    def set_transport_error(
+        self,
+        adapter: openai_compatible.OpenAICompatibleModel,
+        error: Exception,
+    ) -> None:
+        async def failing_create(**kwargs: Any) -> None:
+            raise error
+
+        adapter._client.completions.create = failing_create
+
+    def expected_output(
+        self, adapter: openai_compatible.OpenAICompatibleModel
+    ) -> str:
+        return "offline answer"

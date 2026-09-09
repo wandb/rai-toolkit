@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+# SPDX-FileCopyrightText: 2026 Abhinav Garg
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
