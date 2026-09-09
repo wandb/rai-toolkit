@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 schallten
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
@@ -19,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from rai_toolkit.models._prompting import build_prompt_parts
 from rai_toolkit.models.base import BaseModel, ModelResponse
 
 logger = logging.getLogger(__name__)
@@ -62,7 +64,8 @@ class AnthropicModel(BaseModel):
             invented.
         base_url: Optional override for the Anthropic client (proxies /
             compatible gateways). Leave ``None`` for the Anthropic API.
-        system_prompt: Optional system message prepended to every call.
+        system_prompt: Optional trusted system instructions prepended to every
+            call.
             This is how a triage-assistant or RAG-style app wires its
             system instructions while still being a generic adapter.
         max_tokens: Default maximum number of tokens to generate. Must be
@@ -96,7 +99,7 @@ class AnthropicModel(BaseModel):
         if self._client is None:
             try:
                 from anthropic import AsyncAnthropic
-            except ImportError as exc:  # pragma: no cover - absent only without the extra
+            except ImportError as exc:  # pragma: no cover
                 raise ImportError(_ANTHROPIC_IMPORT_ERROR) from exc
 
             client_kwargs: dict[str, Any] = {}
@@ -116,10 +119,11 @@ class AnthropicModel(BaseModel):
         """Run inference against Anthropic's Messages API.
 
         Args:
-            input_text: The user input or query. Sent as the user message.
-            context: Optional retrieved context (for RAG systems). Sent
-                through the top-level ``system`` parameter alongside the
-                system prompt.
+            input_text: The user input or query.
+            context: Optional retrieved context (for RAG systems). Serialized
+                with the input as lower-trust user data and never added to the
+                top-level ``system`` parameter. A trusted interpretation policy
+                is added to ``system`` only when context is present.
             **kwargs: ``max_tokens`` overrides the adapter default for this
                 call. Must be positive when provided.
 
@@ -128,20 +132,24 @@ class AnthropicModel(BaseModel):
             and normalized metadata.
         """
         max_tokens = _coerce_max_tokens(kwargs.get("max_tokens", self.max_tokens))
-
-        system_parts: list[str] = []
-        if self.system_prompt:
-            system_parts.append(self.system_prompt)
-        if context:
-            system_parts.append(f"Retrieved context:\n{context}")
+        system_prompt, user_message = build_prompt_parts(
+            self.system_prompt,
+            input_text,
+            context,
+        )
 
         params: dict[str, Any] = {
             "model": self.model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": input_text}],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": user_message,
+                }
+            ],
         }
-        if system_parts:
-            params["system"] = "\n\n".join(system_parts)
+        if system_prompt:
+            params["system"] = system_prompt
 
         response = await self.client.messages.create(**params)
 

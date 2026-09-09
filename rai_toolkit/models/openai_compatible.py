@@ -22,6 +22,7 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from rai_toolkit.models._prompting import build_prompt_parts
 from rai_toolkit.models.base import BaseModel, ModelResponse
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,8 @@ class OpenAICompatibleModel(BaseModel):
             the public OpenAI API.
         api_key: API key. Falls back to ``OPENAI_API_KEY`` env var if
             unset. Many local stacks accept any non-empty string.
-        system_prompt: Optional system message prepended to every call.
+        system_prompt: Optional trusted system instructions prepended to every
+            call.
             This is how a triage-assistant or RAG-style app wires its
             system instructions while still being a generic adapter.
         temperature: Default 0 for reproducibility. Override per-call via
@@ -78,17 +80,21 @@ class OpenAICompatibleModel(BaseModel):
         context: str = "",
         **kwargs: Any,
     ) -> ModelResponse:
+        """Run inference through the configured chat-completions endpoint.
+
+        Retrieved context is serialized with the input as lower-trust user data.
+        Raw context never uses the privileged ``system`` role. A trusted
+        interpretation policy is added to that role only when context is present.
+        """
+        system_prompt, user_message = build_prompt_parts(
+            self.system_prompt,
+            input_text,
+            context,
+        )
         messages: list[dict[str, str]] = []
-        if self.system_prompt:
-            messages.append({"role": "system", "content": self.system_prompt})
-        if context:
-            messages.append(
-                {
-                    "role": "system",
-                    "content": f"Retrieved context:\n{context}",
-                }
-            )
-        messages.append({"role": "user", "content": input_text})
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_message})
 
         completion = await self._client.chat.completions.create(
             model=self.model,

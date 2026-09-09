@@ -348,6 +348,11 @@ The optional key is never substituted: when `api_key` is omitted, key
 resolution is left entirely to the Anthropic SDK (e.g. the
 `ANTHROPIC_API_KEY` environment variable).
 
+Built-in adapters send `system_prompt` as trusted system instructions. When
+`context` is non-empty, they serialize it with `input_text` as lower-trust user
+data instead of promoting it to the system channel. This preserves the role
+boundary, but does not by itself prevent prompt injection.
+
 Running fully self-hosted or air-gapped? See [docs/self_hosted.md](docs/self_hosted.md).
 
 ## Quickstart

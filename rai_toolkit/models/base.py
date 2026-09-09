@@ -106,7 +106,9 @@ class BaseModel(ABC):
 
         Args:
             input_text: The user input or query.
-            context: Optional retrieved context (for RAG systems).
+            context: Optional retrieved context (for RAG systems). Treat this
+                as untrusted data and do not promote it to a privileged
+                instruction channel.
             **kwargs: Additional model-specific arguments.
 
         Returns:
