@@ -1756,6 +1756,24 @@ def test_a_colliding_delimiter_is_not_used() -> None:
     assert (open_, close) != ("⟦", "⟧")
 
 
+def test_the_prompt_claims_only_the_sequence_is_unique() -> None:
+    # The tag lengthens by repeating a character the response already contains,
+    # so claiming the characters are absent would be false exactly when the
+    # judge most needs to tell a tag from the model's own text.
+    output = _exhaust_single_characters() + " Notices are required [adverse-action]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    scorer.score(output, context=CONTEXT)
+
+    tag = _occurrence_tag(output)
+    assert tag is not None
+    prompt = scorer._call_judge.call_args.args[1]
+    assert tag[0] not in output  # the sequence is absent
+    assert tag[0][0] in output  # the character is not
+    assert "That exact sequence appears nowhere else" in prompt
+    assert "These characters appear nowhere else" not in prompt
+
+
 def test_the_prompt_states_which_delimiters_were_used() -> None:
     # The judge cannot be told about a fixed tag when the tag is not fixed.
     output = "Alpha claim ⟦1⟧ is prior text [fair-lending]."
