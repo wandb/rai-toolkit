@@ -390,9 +390,10 @@ Respond in JSON format:
 CITATION_TAG_BLOCK = """
 
 The occurrence tag is written {open}n{close}, so the first citation is tagged
-{open}1{close}. These characters appear nowhere else in the Response; they were
-chosen for this response so that nothing the model wrote can be mistaken for a
-tag, and nothing it wrote had to be altered to make room for one."""
+{open}1{close}. That exact sequence appears nowhere else in the Response: it was
+chosen for this response, so a tag is never something the model wrote, and
+nothing the model wrote had to be altered to make room for one. Text that merely
+resembles part of the tag is the model's own and is not a tag."""
 
 CITATION_SCOPE_BLOCK = """
 
