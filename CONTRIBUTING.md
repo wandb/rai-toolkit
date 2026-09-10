@@ -88,4 +88,5 @@ vulnerabilities.
 - Scoped starter work lives under the [good first issue](https://github.com/wandb/rai-toolkit/labels/good%20first%20issue) label.
 - Framework mappings (ISO/IEC 42001 #6, Colorado AI Act #7, NYC LL144 #8) mirror the existing NIST AI RMF mapping structure in `rai_toolkit/compliance/`.
 - The example policy pack under `rai_toolkit/policies/packs/example_enterprise_pack/` shows the policy format.
+- [`docs/model_adapters.md`](docs/model_adapters.md) is the contract every model adapter is held to — the `predict` signature, where retrieved context may and may not go, the standard metadata keys, lazy optional SDK imports, and `from_args`. Read it before adding or changing an adapter under `rai_toolkit/models/`, and add a `ModelAdapterContractTests` subclass (`tests/model_adapter_contract.py`) to the adapter's test module.
 - Lint policies with `rai policies lint`.

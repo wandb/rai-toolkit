@@ -15,6 +15,7 @@ import pytest
 import rai_toolkit.models as models_pkg
 from rai_toolkit.models import AnthropicModel
 from rai_toolkit.models import anthropic as anthropic_module
+from tests.model_adapter_contract import ModelAdapterContractTests
 
 anthropic = pytest.importorskip("anthropic")
 
@@ -324,3 +325,34 @@ async def test_predict_raises_helpful_error_without_sdk(
 
     with pytest.raises(ImportError, match="anthropic"):
         await model.predict("Review this answer.")
+
+
+class TestAnthropicContract(ModelAdapterContractTests):
+    """Run the shared adapter conformance suite against this adapter."""
+
+    adapter_module = anthropic_module
+    optional_sdk_module = "anthropic"
+    optional_sdk_extra = "[anthropic]"
+    secret_values = ("secret-test-key",)
+
+    def make_adapter(self) -> AnthropicModel:
+        # The client stays lazy: the autouse fixture has already patched
+        # ``AsyncAnthropic``, so the first call builds a mocked transport,
+        # and the optional-SDK tests can still remove the package first.
+        return AnthropicModel(
+            model="claude-sonnet-4-5",
+            base_url="https://proxy.example/v1",
+            api_key="secret-test-key",
+        )
+
+    def provider_calls(self, adapter: AnthropicModel) -> list[dict[str, Any]]:
+        return adapter.client.messages.calls
+
+    def set_transport_error(self, adapter: AnthropicModel, error: Exception) -> None:
+        async def failing_create(**kwargs: Any) -> None:
+            raise error
+
+        adapter.client.messages.create = failing_create
+
+    def expected_output(self, adapter: AnthropicModel) -> str:
+        return "offline answer"
