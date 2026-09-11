@@ -1075,6 +1075,11 @@ def _line_body(line: str) -> str:
     return line.rstrip("\r\n")
 
 
+def _leading_space(body: str) -> str:
+    """The run of spaces and tabs a line opens with."""
+    return body[: len(body) - len(body.lstrip(" \t"))]
+
+
 def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
     """Ranges covered by fenced code blocks.
 
@@ -1098,28 +1103,51 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
     # cannot reach across.
     spans: list[tuple[int, int, int]] = []
     index = 0
+    # An indented code block cannot interrupt a paragraph, so it only begins
+    # where no paragraph is open. That is what makes the rule safe to apply: a
+    # continuation line inside a list follows the item's text, so it is never
+    # read as code and a citation written there is still graded.
+    paragraph_open = False
     while index < len(lines):
         body = _line_body(lines[index])
+
+        if not body.strip():
+            paragraph_open = False
+            index += 1
+            continue
+
+        if not paragraph_open and len(_leading_space(body).expandtabs(4)) >= 4:
+            probe = index
+            last = index
+            while probe < len(lines):
+                candidate = _line_body(lines[probe])
+                if not candidate.strip():
+                    probe += 1
+                    continue
+                if len(_leading_space(candidate).expandtabs(4)) < 4:
+                    break
+                last = probe
+                probe += 1
+            start = offsets[index]
+            spans.append((start, start, offsets[last] + len(lines[last])))
+            index = last + 1
+            continue
+
         match = _FENCE_OPEN.search(body)
         if match is None:
+            paragraph_open = True
             index += 1
             continue
 
         fence = match.group("fence")
         indent = body[: match.start("fence")]
-        # A fence opens a line or it is not a fence. Supporting a mid-line run
-        # was an extension of my own, and it masked prose that no Markdown
-        # renderer treats as code - hiding a citation and passing the row.
-        if indent.strip():
-            index += 1
-            continue
-        # At most three leading spaces open a fence. Four or more is an
+        # A fence opens a line, with at most three leading spaces. A run later
+        # in the line is prose ("see ``` for fences"), and a deeper indent is an
         # indented code block, which ends at the first unindented line rather
-        # than running on, so treating one as a fence masked every citation
-        # after it. A tab counts as an indent this rule does not admit either.
-        at_line_start = indent.strip() == "" and len(indent.expandtabs(4)) <= 3
-        # Only a bare fence opens a block: "see ``` for fences" is prose.
-        if not at_line_start and match.group("info").strip():
+        # than running on. Neither opens a block, and treating either as one
+        # masked the prose after it. A tab counts as four columns.
+        if indent.strip() or len(indent.expandtabs(4)) > 3:
+            paragraph_open = True
             index += 1
             continue
 
@@ -1128,6 +1156,7 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
         # "```a`b" as a fence masked the prose after it, which is where an
         # unsupported citation then disappeared.
         if fence[0] == "`" and "`" in match.group("info"):
+            paragraph_open = True
             index += 1
             continue
 
@@ -1156,13 +1185,13 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
             probe += 1
 
         if closed_at is None:
-            if not at_line_start:
-                index += 1
-                continue
+            # A reply truncated mid-block leaves one open, and the code before
+            # the cut is still code.
             spans.append((block_start, start, len(text)))
             break
 
         spans.append((block_start, start, offsets[closed_at] + len(lines[closed_at])))
+        paragraph_open = False
         index = closed_at + 1
     return spans
 
