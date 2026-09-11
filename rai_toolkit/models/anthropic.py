@@ -21,7 +21,11 @@ import logging
 from typing import Any
 
 from rai_toolkit.models._prompting import build_prompt_parts
-from rai_toolkit.models.base import BaseModel, ModelResponse
+from rai_toolkit.models.base import (
+    BaseModel,
+    ModelResponse,
+    _reject_unsupported_call_options,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,13 +128,16 @@ class AnthropicModel(BaseModel):
                 with the input as lower-trust user data and never added to the
                 top-level ``system`` parameter. A trusted interpretation policy
                 is added to ``system`` only when context is present.
-            **kwargs: ``max_tokens`` overrides the adapter default for this
-                call. Must be positive when provided.
+            **kwargs: ``max_tokens`` is the only supported per-call option and
+                overrides the adapter default. Unknown options fail before the
+                provider client is constructed. ``max_tokens`` must be positive
+                when provided.
 
         Returns:
             ModelResponse with all text blocks concatenated into ``output``
             and normalized metadata.
         """
+        _reject_unsupported_call_options(type(self).__name__, kwargs, {"max_tokens"})
         max_tokens = _coerce_max_tokens(kwargs.get("max_tokens", self.max_tokens))
         system_prompt, user_message = build_prompt_parts(
             self.system_prompt,

@@ -47,9 +47,16 @@ With an empty `context` — the default — that means `input_text` is passed ve
 
 **An empty `context` must not create a synthetic context block.** `context=""` is the default and means "no retrieval happened". Emitting an empty `retrieved_context` field, or an empty "Retrieved context:" block, tells the model a retrieval returned nothing, which is a different claim from not having retrieved at all, and it changes behaviour.
 
-**`**kwargs` carries per-call overrides** of the adapter's own configured defaults. Today each built-in adapter reads exactly one key and silently ignores every other: `OpenAICompatibleModel` reads `temperature`, and `AnthropicModel` reads `max_tokens`. Unrecognized keys are dropped rather than forwarded to the provider, so a misspelled override fails silently — check the adapter you are calling before relying on one.
+**`**kwargs` carries per-call overrides** of the adapter's own configured defaults. The built-in adapters accept only the options in this table:
 
-An adapter that does read a key validates it with the same rule its constructor uses: `AnthropicModel` runs a per-call `max_tokens` through `_coerce_max_tokens`, so an invalid value raises `ValueError` before the request is built. A general `**kwargs` API — an agreed set of overrides and rejection of unknown or invalid keys — is follow-up work tracked in [#63](https://github.com/wandb/rai-toolkit/issues/63). A new adapter should not invent its own until that lands.
+| Adapter | Supported call-time options | Validation and request behaviour |
+| --- | --- | --- |
+| `OpenAICompatibleModel` | `temperature`, `max_tokens` | `max_tokens` must be a positive Python integer. It is omitted from the provider request when the caller does not supply it, preserving the provider default. |
+| `AnthropicModel` | `max_tokens` | A positive Python integer is the portable form. The adapter also preserves its existing normalization of integer strings, `None`, and blank strings for compatibility. |
+
+Every other call-time option raises `TypeError` before a provider request is made. The error names the adapter and lists every unsupported key in sorted order, so misspellings such as `max_token` cannot look successful while doing nothing. Adapter-controlled fields such as `model`, `messages`, `system`, and retrieved-context serialization cannot be overridden through `**kwargs`.
+
+This is an intentional compatibility change for callers that relied on ignored keyword arguments: those calls now fail clearly. Provider SDK parameters are not forwarded automatically; adding another supported option requires an explicit adapter contract, validation, documentation, and tests.
 
 `predict` returns a `ModelResponse`, never a bare string, `None`, or a provider object.
 

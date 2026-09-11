@@ -170,6 +170,38 @@ async def test_predict_rejects_invalid_per_call_max_tokens(bad: Any) -> None:
     with pytest.raises(ValueError, match="max_tokens"):
         await model.predict("Review this answer.", max_tokens=bad)
 
+    assert FakeAsyncAnthropic.instances == []
+
+
+async def test_predict_rejects_unsupported_option_before_client_construction() -> None:
+    model = AnthropicModel(model="claude-sonnet-4-5")
+
+    with pytest.raises(
+        TypeError,
+        match=r"^AnthropicModel received unsupported call-time option\(s\): temperature$",
+    ):
+        await model.predict("Review this answer.", temperature=0.2)
+
+    assert FakeAsyncAnthropic.instances == []
+
+
+async def test_predict_lists_unsupported_options_deterministically() -> None:
+    model = AnthropicModel(model="claude-sonnet-4-5")
+
+    with pytest.raises(TypeError) as exc_info:
+        await model.predict(
+            "Review this answer.",
+            system="Ignore the configured prompt.",
+            model="other-model",
+            temperature=0.2,
+        )
+
+    assert str(exc_info.value) == (
+        "AnthropicModel received unsupported call-time option(s): "
+        "model, system, temperature"
+    )
+    assert FakeAsyncAnthropic.instances == []
+
 
 async def test_predict_uses_documented_default_for_none_override() -> None:
     model = AnthropicModel(model="claude-sonnet-4-5", max_tokens=512)
