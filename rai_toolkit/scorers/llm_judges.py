@@ -1031,23 +1031,88 @@ def _is_fabrication_candidate(
 # for when the code itself contains backticks. The closing fence is optional:
 # a response truncated mid-block leaves one open, and the code before the cut is
 # still code.
-_FENCED_CODE_PATTERN = re.compile(
-    # Opening a line: may close with a matching fence or run to the end of the
-    # response. A reply truncated mid-block leaves one open, and the code
-    # before the cut is still code.
-    r"^[ \t]*(?P<fence>`{3,}|~{3,})[^\n]*"
-    r"(?:\n.*?)??"
-    r"(?:^[ \t]*(?P=fence)[ \t]*$|\Z)"
-    # Opened mid-line: must be closed. Running to the end of the response here
-    # would let a stray run in prose ("see ``` for fences") swallow every
-    # citation after it.
-    r"|(?P<midline>`{3,}|~{3,})[^\n]*\n.*?^[ \t]*(?P=midline)[ \t]*$",
-    re.MULTILINE | re.DOTALL,
-)
+# A fence opens with three or more backticks or tildes. Tildes are what a writer
+# reaches for when the code itself contains backticks.
+_FENCE_OPEN = re.compile(r"(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$")
+# A closing fence is a run of the same character on a line of its own, and may be
+# *longer* than the opener - CommonMark requires at least as long, not equal.
+_FENCE_CLOSE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*$")
 
 # An inline span opens with a run of backticks and closes with a run of the same
-# length, so ``x`` is one span rather than two empty ones either side of x.
-_INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?:(?!(?P=ticks))[^\n])*(?P=ticks)")
+# length, so ``x`` is one span rather than two empty ones either side of x. The
+# body may cross a line ending, which is what Markdown allows and what the
+# previous [^\n] body wrongly excluded.
+_INLINE_CODE_PATTERN = re.compile(r"(?P<ticks>`+)(?:(?!(?P=ticks))[\s\S])*(?P=ticks)")
+
+
+def _line_offsets(text: str) -> tuple[list[str], list[int]]:
+    """Lines with their start offsets, so spans can be reported in characters."""
+    lines = text.splitlines(keepends=True)
+    offsets: list[int] = []
+    cursor = 0
+    for line in lines:
+        offsets.append(cursor)
+        cursor += len(line)
+    return lines, offsets
+
+
+def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
+    """Ranges covered by fenced code blocks.
+
+    Scanned rather than matched with a single expression because the closing
+    rule is a comparison, not an equality: a block opened with three backticks
+    closes on any run of three *or more*. A backreference can only demand the
+    same run, so a longer closer went unrecognised, the block was read as
+    unclosed, and the mask swallowed the rest of the response - hiding any
+    citation that followed it.
+
+    A fence opening a line may also run to the end of the response, since a
+    reply truncated mid-block leaves one open and the code before the cut is
+    still code. One opened mid-line must close: running to the end there would
+    let a stray run in prose ("see ``` for fences") hide every citation after
+    it.
+    """
+    lines, offsets = _line_offsets(text)
+    spans: list[tuple[int, int]] = []
+    index = 0
+    while index < len(lines):
+        body = lines[index].rstrip("\n")
+        match = _FENCE_OPEN.search(body)
+        if match is None:
+            index += 1
+            continue
+
+        fence = match.group("fence")
+        at_line_start = body[: match.start("fence")].strip() == ""
+        # Only a bare fence opens a block: "see ``` for fences" is prose.
+        if not at_line_start and match.group("info").strip():
+            index += 1
+            continue
+
+        start = offsets[index] + (0 if at_line_start else match.start("fence"))
+        closed_at = None
+        probe = index + 1
+        while probe < len(lines):
+            closer = _FENCE_CLOSE.match(lines[probe].rstrip("\n"))
+            if (
+                closer is not None
+                and closer.group("fence")[0] == fence[0]
+                and len(closer.group("fence")) >= len(fence)
+            ):
+                closed_at = probe
+                break
+            probe += 1
+
+        if closed_at is None:
+            if not at_line_start:
+                index += 1
+                continue
+            spans.append((start, len(text)))
+            break
+
+        spans.append((start, offsets[closed_at] + len(lines[closed_at])))
+        index = closed_at + 1
+    return spans
 
 
 def _code_spans(text: str) -> list[tuple[int, int]]:
@@ -1064,9 +1129,7 @@ def _code_spans(text: str) -> list[tuple[int, int]]:
     Fences are resolved first and inline spans are only sought outside them, so
     a backtick run inside a fenced block is not read as an inline span.
     """
-    spans: list[tuple[int, int]] = [
-        (match.start(), match.end()) for match in _FENCED_CODE_PATTERN.finditer(text)
-    ]
+    spans: list[tuple[int, int]] = _fenced_code_spans(text)
     fenced = list(spans)
     for match in _INLINE_CODE_PATTERN.finditer(text):
         if not any(start <= match.start() < end for start, end in fenced):
@@ -1207,6 +1270,7 @@ def _resolve_citations(
     blocks: dict[str, tuple[str, str]],
     context: str,
     citation_pattern: re.Pattern[str] = _CITATION_PATTERN,
+    label_pattern: re.Pattern[str] = _SOURCE_LABEL_PATTERN,
 ) -> tuple[list[_Citation], list[str], list[str], list[str]]:
     """Sort occurrences into (resolved, ambiguous, fabricated, ignored).
 
@@ -1225,10 +1289,17 @@ def _resolve_citations(
       this context uses distinguishably.
     - **ignored** - does not look like a source id at all: ``arr[0]``,
       ``[TODO]``, markdown-link text.
+
+    Both patterns come from the scorer, so the classification holds for an
+    overridden label syntax as well as the default one.
     """
     inline = {match.group(1).lower() for match in citation_pattern.finditer(context)}
     accusable = _accusable_signatures(blocks)
-    rejected = _rejected_source_labels(context)
+    # The scorer's own label pattern, not the default: a context declaring its
+    # sources as ``<<source-id>>`` has no bracketed labels to find, so scanning
+    # for the default syntax reported nothing rejected and a citation naming a
+    # duplicated or empty label fell through to the shape filter and passed.
+    rejected = _rejected_source_labels(context, label_pattern)
     resolved: list[_Citation] = []
     ambiguous: list[str] = []
     fabricated: list[str] = []
@@ -1671,7 +1742,11 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
 
         blocks = _parse_source_blocks(context, self.source_label_pattern)
         resolved, ambiguous, fabricated, ignored = _resolve_citations(
-            citations, blocks, context, self.citation_pattern
+            citations,
+            blocks,
+            context,
+            self.citation_pattern,
+            self.source_label_pattern,
         )
         if not resolved:
             if fabricated:
