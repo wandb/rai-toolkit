@@ -47,10 +47,10 @@ _SEVERITY_LABELS: dict[int, tuple[str, str]] = {
 
 @dataclass
 class GateRow:
-    """One of the four verdict gates.
+    """One verdict gate.
 
-    Each gate evaluates independently against the assessment, and the overall
-    verdict is the AND of all four. Surfacing them as a flat list keeps every
+    Each gate evaluates independently against the assessment. Surfacing them
+    as a flat list keeps every
     renderer from re-deriving "did this gate pass?".
     """
 
@@ -71,7 +71,7 @@ class ScoreRow:
 
     key: str
     label: str
-    percent: float
+    percent: float | None
     state: str
     note: str = ""
 
@@ -170,8 +170,11 @@ class AssessmentReportView:
 
     # Red-team
     redteam_attacks_total: int
-    redteam_resistance: float
-    redteam_attack_success: float
+    redteam_attacks_assessed: int
+    redteam_errors: int
+    redteam_error_rate: float
+    redteam_resistance: float | None
+    redteam_attack_success: float | None
     redteam_successful_attacks: list[AttackRow]
 
     # Pass-through for renderer-specific evidence rendering
@@ -210,6 +213,13 @@ class AssessmentReportView:
         verdict = "PASS" if result.overall_passed else "FAIL"
         eval_gate = "PASS" if result.evaluation_overall_passed else "FAIL"
         sev_gate = "PASS" if result.redteam_severity_gate_passed else "FAIL"
+        redteam_was_run = result.redteam_summary is not None
+        has_error_gate = redteam_was_run and _result_has_field(
+            result, "redteam_error_budget_passed"
+        )
+        error_gate = (
+            "PASS" if bool(result.redteam_error_budget_passed) else "FAIL"
+        ) if has_error_gate else None
         framework_gate = (
             "PASS"
             if all(getattr(f, "passed", False) for f in framework_list)
@@ -226,6 +236,10 @@ class AssessmentReportView:
 
         threshold = int(result.redteam_severity_gate_threshold or 0)
         threshold_label = str(threshold) if threshold else "-"
+        error_budget = (
+            float(result.redteam_error_budget or 0.0) if has_error_gate else 0.0
+        )
+        error_budget_label = f"{error_budget:.0%}"
 
         gates = [
             GateRow("eval", "eval gate", eval_gate),
@@ -236,8 +250,28 @@ class AssessmentReportView:
                 sev_gate,
                 threshold_note=f"sev ≥ {threshold_label}",
             ),
-            GateRow("policy", "policy gate", policy_gate),
         ]
+        if error_gate is not None:
+            gates.append(
+                GateRow(
+                    "error_budget",
+                    "red-team error budget",
+                    error_gate,
+                    threshold_note=f"errors ≤ {error_budget_label}",
+                )
+            )
+        gates.append(GateRow("policy", "policy gate", policy_gate))
+
+        rt_summary = result.redteam_summary or {}
+        redteam_metrics = _normalize_redteam_summary(rt_summary)
+        redteam_state = (
+            "PASS"
+            if sev_gate == "PASS" and error_gate in (None, "PASS")
+            else "FAIL"
+        )
+        redteam_note = f"severity gate sev ≥ {threshold_label}"
+        if error_gate is not None:
+            redteam_note += f"; error budget {error_budget_label}"
 
         # Scores rows: keep order stable so all surfaces render identically.
         scores = [
@@ -251,9 +285,9 @@ class AssessmentReportView:
             ScoreRow(
                 "redteam_resistance",
                 "Red-team resistance",
-                float(bd.get("red_team_resistance", 0) or 0),
-                "PASS" if sev_gate == "PASS" else "FAIL",
-                note=f"severity gate sev ≥ {threshold_label}",
+                redteam_metrics.resistance_rate,
+                redteam_state,
+                note=redteam_note,
             ),
             ScoreRow(
                 "policy_health",
@@ -275,13 +309,13 @@ class AssessmentReportView:
             if isinstance(g, dict) and int(g.get("count") or 0) > 0
         ]
 
-        rt_summary = result.redteam_summary or {}
-        attacks_total = int(rt_summary.get("total") or 0)
-        success_rate = float(rt_summary.get("overall_success_rate") or 0)
-        resistance = 1.0 - success_rate
         rt_attack_rows: list[AttackRow] = []
         for row in rt_summary.get("results") or []:
-            if not isinstance(row, dict) or not row.get("succeeded"):
+            if (
+                not isinstance(row, dict)
+                or not row.get("succeeded")
+                or row.get("error") is not None
+            ):
                 continue
             rt_attack_rows.append(_attack_row(row))
 
@@ -304,9 +338,12 @@ class AssessmentReportView:
             frameworks=frameworks,
             findings=finding_rows,
             coverage_gaps=gap_rows,
-            redteam_attacks_total=attacks_total,
-            redteam_resistance=resistance,
-            redteam_attack_success=success_rate,
+            redteam_attacks_total=redteam_metrics.total,
+            redteam_attacks_assessed=redteam_metrics.assessed,
+            redteam_errors=redteam_metrics.errors,
+            redteam_error_rate=redteam_metrics.error_rate,
+            redteam_resistance=redteam_metrics.resistance_rate,
+            redteam_attack_success=redteam_metrics.success_rate,
             redteam_successful_attacks=rt_attack_rows,
             policy_violations=[_violation_to_dict(v) for v in violations],
             policy_assessment=dict(result.policy_assessment or {}),
@@ -325,6 +362,116 @@ class AssessmentReportView:
                 "EU AI Act articles mapped onto the same categories."
             ),
         )
+
+
+@dataclass(frozen=True)
+class _RedTeamMetrics:
+    """Normalized red-team counts and rates for current and legacy reports."""
+
+    total: int
+    assessed: int
+    errors: int
+    error_rate: float
+    success_rate: float | None
+    resistance_rate: float | None
+
+
+def _normalize_redteam_summary(summary: dict[str, Any]) -> _RedTeamMetrics:
+    """Read current report fields and repair older serialized report shapes.
+
+    Reports created before the three-state outcome model included execution
+    errors in the success-rate denominator. Their result rows and family
+    aggregates still carry enough information to recover the assessed count.
+    """
+    rows = [row for row in (summary.get("results") or []) if isinstance(row, dict)]
+    total = _nonnegative_int(summary.get("total"))
+    if "total" not in summary and rows:
+        total = len(rows)
+
+    if "total_errors" in summary:
+        errors = _nonnegative_int(summary.get("total_errors"))
+    elif rows:
+        errors = sum(1 for row in rows if row.get("error") is not None)
+    else:
+        by_family = summary.get("by_family") or {}
+        errors = sum(
+            _nonnegative_int(family.get("errors"))
+            for family in by_family.values()
+            if isinstance(family, dict)
+        )
+    errors = min(errors, total)
+
+    if "total_assessed" in summary:
+        assessed = min(_nonnegative_int(summary.get("total_assessed")), total)
+    else:
+        assessed = max(total - errors, 0)
+
+    if "total_successes" in summary:
+        successes: int | None = _nonnegative_int(summary.get("total_successes"))
+    elif rows:
+        successes = sum(
+            1
+            for row in rows
+            if row.get("succeeded") and row.get("error") is None
+        )
+    else:
+        successes = None
+    if successes is not None:
+        successes = min(successes, assessed)
+
+    if assessed:
+        if successes is not None:
+            success_rate = successes / assessed
+        else:
+            success_rate = _optional_rate(summary.get("overall_success_rate"))
+            if success_rate is None:
+                success_rate = 0.0
+        resistance_rate = 1.0 - success_rate
+    else:
+        success_rate = None
+        resistance_rate = None
+
+    if "error_rate" in summary:
+        error_rate = _rate_or_default(summary.get("error_rate"), 0.0)
+    else:
+        error_rate = errors / total if total else 0.0
+
+    return _RedTeamMetrics(
+        total=total,
+        assessed=assessed,
+        errors=errors,
+        error_rate=error_rate,
+        success_rate=success_rate,
+        resistance_rate=resistance_rate,
+    )
+
+
+def _nonnegative_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _rate_or_default(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _optional_rate(value: Any) -> float | None:
+    try:
+        rate = float(value)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, rate))
+
+
+def _result_has_field(result: Any, name: str) -> bool:
+    if isinstance(result, _DictResult):
+        return name in result._d
+    return hasattr(result, name)
 
 
 def _framework_row(f: Any) -> FrameworkRow:

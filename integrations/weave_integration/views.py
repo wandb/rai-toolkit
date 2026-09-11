@@ -108,19 +108,20 @@ def _link_or_text(label: str, url: str | None) -> str:
     return f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_label}</a>'
 
 
-def _score_cell(label: str, percent: float, bar_cls: str, note: str) -> str:
+def _score_cell(label: str, percent: float | None, bar_cls: str, note: str) -> str:
     """Render one of the three big-number metrics in the Scores card.
 
     ``bar_cls`` selects the bar colour: empty string = green (pass),
     ``"fail"`` = red, ``"warn"`` = amber, ``"neutral"`` = gray (used for the
-    red-team resistance metric, whose own severity gate (not this rate) drives
+    red-team resistance metric, whose severity and execution-error gates drive
     the verdict).
     """
-    width = max(0.0, min(100.0, percent * 100))
+    width = max(0.0, min(100.0, percent * 100)) if percent is not None else 0.0
+    value = f"{percent * 100:.1f}%" if percent is not None else "n/a"
     return (
         '<div class="score-cell">'
         f'<div class="score-label">{escape(label)}</div>'
-        f'<div class="score-value">{percent * 100:.1f}%</div>'
+        f'<div class="score-value">{value}</div>'
         f'<div class="score-bar {bar_cls}"><div style="width:{width:.1f}%"></div></div>'
         f'<div class="score-note">{escape(note)}</div>'
         "</div>"
@@ -163,14 +164,19 @@ def render_assessment_html(result: AssessmentResult) -> str:
 
     # Red-team counts, reused by the score note and the red-team card header.
     rt_total = view.redteam_attacks_total
+    rt_assessed = view.redteam_attacks_assessed
+    rt_errors = view.redteam_errors
     rt_succeeded = len(view.redteam_successful_attacks)
-    rt_resisted = max(0, rt_total - rt_succeeded)
+    rt_resisted = max(0, rt_assessed - rt_succeeded)
 
-    # Scores: three big numbers, one per independent gate.
+    # Scores: three big numbers for the main evaluation dimensions.
     eval_note = view.scores[0].note
     rt_note = view.scores[1].note
     if rt_total:
-        rt_note = f"{rt_resisted} of {rt_total} attacks resisted; {rt_note}"
+        rt_note = (
+            f"{rt_assessed} of {rt_total} assessed, {rt_errors} errored; "
+            f"{rt_resisted} resisted; {rt_note}"
+        )
     pv = view.policy_violations_count
     policy_note = f"{pv} violation{'s' if pv != 1 else ''} across configured policies"
     scores_card = (
@@ -343,11 +349,28 @@ def render_assessment_html(result: AssessmentResult) -> str:
                 f"<td>{trace_html}</td></tr>"
             )
         if not rt_rows:
-            rt_rows = '<tr><td colspan="4" class="empty">No successful red-team attacks.</td></tr>'
+            empty_message = (
+                "No attacks were assessed."
+                if not rt_assessed
+                else "No successful attacks among assessed attacks."
+            )
+            rt_rows = (
+                f'<tr><td colspan="4" class="empty">{empty_message}</td></tr>'
+            )
 
         header = (
-            f"Red-team · {rt_total} attacks · {rt_resisted} resisted · "
+            f"Red-team · {rt_total} attempted · {rt_assessed} assessed · "
+            f"{rt_errors} errored · {rt_resisted} resisted · "
             f"{rt_succeeded} succeeded{breakdown}"
+        )
+        error_gate = next(
+            (gate for gate in view.gates if gate.key == "error_budget"),
+            None,
+        )
+        error_gate_note = (
+            f" The execution error budget is {error_gate.threshold_note}."
+            if error_gate is not None
+            else ""
         )
         rt_html = (
             f'<div class="card"><div class="card-hdr">{escape(header)}</div>'
@@ -355,7 +378,8 @@ def render_assessment_html(result: AssessmentResult) -> str:
             f"<tbody>{rt_rows}</tbody></table></div>"
             f'<div class="card-foot">'
             f"A single successful attack at severity ≥ {escape(view.severity_gate_threshold_label)} "
-            f"fails the verdict regardless of the aggregate resistance rate. Trace links "
+            f"fails the verdict regardless of the aggregate resistance rate."
+            f"{escape(error_gate_note)} Trace links "
             f"open the full call detail.</div></div>"
         )
 

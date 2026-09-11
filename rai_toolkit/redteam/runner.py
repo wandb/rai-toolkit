@@ -11,6 +11,7 @@ import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 from rai_toolkit import _tracing
@@ -24,6 +25,14 @@ from rai_toolkit.redteam.attacks import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class AttackOutcome(str, Enum):
+    """Stable outcome values for an attempted attack."""
+
+    SUCCEEDED = "succeeded"
+    RESISTED = "resisted"
+    UNASSESSED_ERROR = "unassessed_error"
 
 
 def _attack_display_name(call: Any) -> str:
@@ -71,6 +80,20 @@ class AttackResult:
     error: str | None = None
     weave_call_url: str | None = None
 
+    @property
+    def assessed(self) -> bool:
+        """Whether the model response could be assessed."""
+        return self.error is None
+
+    @property
+    def outcome(self) -> AttackOutcome:
+        """Return the three-state outcome, with execution errors taking priority."""
+        if not self.assessed:
+            return AttackOutcome.UNASSESSED_ERROR
+        if self.succeeded:
+            return AttackOutcome.SUCCEEDED
+        return AttackOutcome.RESISTED
+
 
 @dataclass
 class FamilyStats:
@@ -82,12 +105,20 @@ class FamilyStats:
     errors: int = 0
 
     @property
-    def success_rate(self) -> float:
-        return self.successes / self.total if self.total else 0.0
+    def assessed(self) -> int:
+        """Number of attacks that produced an assessable model response."""
+        return self.total - self.errors
 
     @property
-    def resistance_rate(self) -> float:
-        return 1.0 - self.success_rate
+    def success_rate(self) -> float | None:
+        """Successful attacks divided by assessed attacks."""
+        return self.successes / self.assessed if self.assessed else None
+
+    @property
+    def resistance_rate(self) -> float | None:
+        """Resisted attacks divided by assessed attacks."""
+        success_rate = self.success_rate
+        return 1.0 - success_rate if success_rate is not None else None
 
 
 @dataclass
@@ -106,15 +137,33 @@ class RedTeamReport:
 
     @property
     def total_successes(self) -> int:
-        return sum(1 for r in self.results if r.succeeded)
+        return sum(1 for r in self.results if r.assessed and r.succeeded)
 
     @property
-    def overall_success_rate(self) -> float:
-        return self.total_successes / self.total if self.total else 0.0
+    def total_errors(self) -> int:
+        """Number of attacks that could not be assessed due to an error."""
+        return sum(1 for r in self.results if r.error is not None)
 
     @property
-    def overall_resistance_rate(self) -> float:
-        return 1.0 - self.overall_success_rate
+    def total_assessed(self) -> int:
+        """Number of attacks that produced an assessable model response."""
+        return self.total - self.total_errors
+
+    @property
+    def error_rate(self) -> float:
+        """Execution errors divided by all attempted attacks."""
+        return self.total_errors / self.total if self.total else 0.0
+
+    @property
+    def overall_success_rate(self) -> float | None:
+        """Successful attacks divided by assessed attacks."""
+        return self.total_successes / self.total_assessed if self.total_assessed else None
+
+    @property
+    def overall_resistance_rate(self) -> float | None:
+        """Resisted attacks divided by assessed attacks."""
+        success_rate = self.overall_success_rate
+        return 1.0 - success_rate if success_rate is not None else None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,13 +172,19 @@ class RedTeamReport:
             "total_duration_s": self.total_duration_s,
             "total": self.total,
             "total_successes": self.total_successes,
+            "total_errors": self.total_errors,
+            "total_assessed": self.total_assessed,
+            "error_rate": self.error_rate,
             "overall_success_rate": self.overall_success_rate,
+            "overall_resistance_rate": self.overall_resistance_rate,
             "by_family": {
                 cat.value: {
                     "total": s.total,
+                    "assessed": s.assessed,
                     "successes": s.successes,
                     "errors": s.errors,
                     "success_rate": s.success_rate,
+                    "resistance_rate": s.resistance_rate,
                 }
                 for cat, s in self.by_family.items()
             },
@@ -141,6 +196,7 @@ class RedTeamReport:
                     "severity": r.severity,
                     "latency_ms": r.latency_ms,
                     "error": r.error,
+                    "outcome": r.outcome.value,
                     "weave_call_url": r.weave_call_url,
                     "prompt_preview": r.prompt[:200],
                     "output_preview": (r.model_output or "")[:300],
@@ -151,11 +207,30 @@ class RedTeamReport:
 
     def format_summary(self) -> str:
         """Render a terminal-friendly summary."""
+        success_rate = self.overall_success_rate
+        resistance_rate = self.overall_resistance_rate
+        if success_rate is None:
+            success_text = "n/a (no attacks assessed)"
+            resistance_text = "n/a (no attacks assessed)"
+        else:
+            success_text = (
+                f"{success_rate:.1%} "
+                f"({self.total_successes}/{self.total_assessed} assessed)"
+            )
+            resisted = self.total_assessed - self.total_successes
+            resistance_text = (
+                f"{resistance_rate:.1%} "
+                f"({resisted}/{self.total_assessed} assessed)"
+            )
+
         lines = [
             f"Red-Team Report: {self.model_name}",
             f"  Attacks run:            {self.total}",
-            f"  Attack success rate:    {self.overall_success_rate:.1%}",
-            f"  Model resistance rate:  {self.overall_resistance_rate:.1%}",
+            f"  Attacks assessed:       {self.total_assessed}/{self.total}",
+            f"  Execution errors:       {self.total_errors}/{self.total} "
+            f"({self.error_rate:.1%})",
+            f"  Attack success rate:    {success_text}",
+            f"  Model resistance rate:  {resistance_text}",
             f"  Duration:               {self.total_duration_s:.1f}s",
             "",
             "By category:",
@@ -164,10 +239,16 @@ class RedTeamReport:
             stats = self.by_family.get(cat)
             if stats is None or stats.total == 0:
                 continue
-            lines.append(
-                f"  {cat.value:20s}  {stats.successes}/{stats.total} succeeded "
-                f"({stats.success_rate:.0%})"
-            )
+            if stats.success_rate is None:
+                detail = (
+                    f"n/a (no attacks assessed; {stats.errors}/{stats.total} errors)"
+                )
+            else:
+                detail = (
+                    f"{stats.successes}/{stats.assessed} assessed attacks succeeded "
+                    f"({stats.success_rate:.0%}); {stats.errors}/{stats.total} errors"
+                )
+            lines.append(f"  {cat.value:20s}  {detail}")
         return "\n".join(lines)
 
 
@@ -277,15 +358,16 @@ def _aggregate(results: list[AttackResult]) -> dict[AttackCategory, FamilyStats]
     for r in results:
         s = stats.setdefault(r.category, FamilyStats(category=r.category))
         s.total += 1
-        if r.succeeded:
+        if r.assessed and r.succeeded:
             s.successes += 1
-        if r.error:
+        if r.error is not None:
             s.errors += 1
     return dict(stats)
 
 
 __all__ = [
     "Attack",
+    "AttackOutcome",
     "AttackResult",
     "AttackRunner",
     "FamilyStats",

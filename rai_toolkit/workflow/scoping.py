@@ -49,6 +49,7 @@ class ScopingDecision:
     weave_entity: str | None
     effective_risk_tier: RiskTier
     rationale: list[str] = field(default_factory=list)
+    redteam_max_error_rate: float | None = None
 
     def as_markdown(self) -> str:
         lines = [
@@ -58,6 +59,7 @@ class ScopingDecision:
             f"- Datasets: `{', '.join(self.datasets) if self.datasets else '-'}`",
             f"- Red-team: {'on' if self.run_redteam else 'off'} "
             f"(max severity {self.redteam_max_severity})",
+            _error_budget_markdown(self),
             f"- Dataset row cap: {self.dataset_limit if self.dataset_limit else '-'}",
             f"- Effective risk tier: {self.effective_risk_tier.value}",
         ]
@@ -69,6 +71,14 @@ class ScopingDecision:
         for r in self.rationale:
             lines.append(f"- {r}")
         return "\n".join(lines)
+
+
+def _error_budget_markdown(decision: ScopingDecision) -> str:
+    if not decision.run_redteam:
+        return "- Red-team execution-error budget: N/A (red-team off)"
+    if decision.redteam_max_error_rate is None:
+        return "- Red-team execution-error budget: N/A (not recorded)"
+    return f"- Red-team execution-error budget: {decision.redteam_max_error_rate:.1%}"
 
 
 _SAMPLE_DATA_TYPE_EXTRA_DATASETS: dict[str, list[str]] = {
@@ -237,6 +247,12 @@ def scope_assessor(
         f"(risk tier = {effective_tier.value})."
     )
 
+    strict_error_budget = (
+        profile.industry is not Industry.GENERAL
+        or effective_tier in (RiskTier.HIGH, RiskTier.CRITICAL)
+    )
+    redteam_max_error_rate = 0.0 if strict_error_budget else 0.10
+
     # Public-facing deployments include adversarial users by default; bump
     # the severity cap one rung (clamped at 5) so we cover at least the
     # next attack tier the in-tree catalog defines. ``external`` (known
@@ -259,6 +275,15 @@ def scope_assessor(
         rationale.append(
             "Red-team skipped: internal deployment + low risk tier. "
             "Re-enable manually for belt-and-suspenders coverage."
+        )
+    if run_redteam:
+        rationale.append(
+            f"Red-team execution-error budget = {redteam_max_error_rate:.1%} "
+            f"(industry = {profile.industry.value}, risk tier = {effective_tier.value})."
+        )
+    else:
+        rationale.append(
+            "Red-team execution-error budget not applied because red-team is off."
         )
 
     dataset_limit = _DATASET_LIMIT[effective_tier]
@@ -300,6 +325,7 @@ def scope_assessor(
         policies_engine=policies_engine,
         run_redteam=run_redteam,
         redteam_max_severity=severity_cap,
+        redteam_max_error_rate=redteam_max_error_rate,
         extra_redteam_sources=list(profile.extra_redteam_sources),
         dataset_limit=dataset_limit,
         weave_project=profile.weave_project,
@@ -316,6 +342,7 @@ def scope_assessor(
         weave_project=profile.weave_project,
         weave_entity=profile.weave_entity,
         effective_risk_tier=effective_tier,
+        redteam_max_error_rate=redteam_max_error_rate,
         rationale=rationale,
     )
     return assessor, decision

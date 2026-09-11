@@ -137,8 +137,9 @@ def summarize_assessment_run(
     """Mirror an :class:`AssessmentResult` onto the active W&B run.
 
     Logs the headline gates (verdict, eval score, red-team severity gate,
-    policy violations, duration) as ``wandb.summary`` keys so the run page
-    shows the assessment outcome at a glance, not just an empty stub.
+    red-team error budget, policy violations, duration) as ``wandb.summary``
+    keys so the run page shows the assessment outcome at a glance, not just an
+    empty stub.
 
     No-op when ``run`` is ``None`` (W&B not reachable) or when ``result``
     is ``None`` (assessment failed before producing a result).
@@ -150,6 +151,8 @@ def summarize_assessment_run(
     except ImportError:
         return
     try:
+        redteam_report = getattr(result, "redteam_summary", None)
+        redteam_summary = redteam_report or {}
         summary: dict[str, Any] = {
             "submission_id": submission_id,
             "verdict": "PASS" if getattr(result, "overall_passed", False) else "FAIL",
@@ -160,6 +163,19 @@ def summarize_assessment_run(
             ),
             "redteam_severity_threshold":
                 getattr(result, "redteam_severity_gate_threshold", None),
+            "redteam_error_budget_gate": (
+                "N/A"
+                if redteam_report is None
+                else (
+                    "PASS"
+                    if getattr(result, "redteam_error_budget_passed", True)
+                    else "FAIL"
+                )
+            ),
+            "redteam_error_budget": getattr(result, "redteam_error_budget", None),
+            "redteam_error_rate": redteam_summary.get("error_rate"),
+            "redteam_total_assessed": redteam_summary.get("total_assessed"),
+            "redteam_total_errors": redteam_summary.get("total_errors"),
             "policy_violations": len(getattr(result, "policy_violations", []) or []),
             "duration_seconds": float(getattr(result, "duration_seconds", 0.0) or 0.0),
         }
