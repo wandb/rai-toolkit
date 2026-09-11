@@ -378,6 +378,52 @@ Built-in adapters send `system_prompt` as trusted system instructions. When
 data instead of promoting it to the system channel. This preserves the role
 boundary, but does not by itself prevent prompt injection.
 
+### Evaluating your own inference function
+
+`CallableModel` wraps any function you already have, so an in-process model,
+an internal SDK, or a proprietary endpoint can be assessed without writing a
+`BaseModel` subclass or adding a provider dependency.
+
+```python
+import asyncio
+
+from rai_toolkit.models import CallableModel, ModelResponse
+
+
+def my_model(input_text: str, context: str = "", **kwargs) -> str:
+    """Return a plain string and the adapter wraps it."""
+    return internal_sdk.complete(input_text)
+
+
+def my_model_with_metadata(input_text: str, context: str = "", **kwargs):
+    """Return a ModelResponse to carry your own metadata through unchanged."""
+    reply = internal_sdk.complete(input_text)
+    return ModelResponse(
+        output=reply.text,
+        metadata={"model": reply.model, "total_tokens": reply.usage.total},
+    )
+
+
+async def main() -> None:
+    model = CallableModel(my_model, name="internal-sdk-v2")
+    print((await model.predict("Review this answer.", context="Policy text")).output)
+
+    detailed = CallableModel(my_model_with_metadata)
+    print((await detailed.predict("Review this answer.")).metadata)
+
+
+asyncio.run(main())
+```
+
+Synchronous functions run on a worker thread so they do not block the event
+loop; `async def` functions are awaited directly. The callable is always
+invoked as `predict_fn(input_text, context=context, **kwargs)` and its
+signature is never inspected, so adapt a differently shaped function yourself:
+
+```python
+model = CallableModel(lambda text, context="", **kwargs: legacy_predict(text))
+```
+
 Running fully self-hosted or air-gapped? See [docs/self_hosted.md](docs/self_hosted.md).
 
 ## Quickstart
