@@ -336,7 +336,7 @@ regardless of which install method you use.
 ### Model adapters
 
 The toolkit ships vendor-neutral model adapters under `rai_toolkit.models`.
-Both expose a shared `BaseModel` / `ModelResponse` contract, so you can swap
+They expose a shared `BaseModel` / `ModelResponse` contract, so you can swap
 providers without changing your assessment code.
 
 ```bash
