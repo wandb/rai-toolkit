@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -36,8 +37,10 @@ class ScorerResult:
     assessed: bool = True
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.score <= 1.0:
-            raise ValueError(f"Score must be between 0.0 and 1.0, got {self.score}")
+        if not math.isfinite(self.score) or not (0.0 <= self.score <= 1.0):
+            raise ValueError(
+                f"Score must be a finite number between 0.0 and 1.0, got {self.score}"
+            )
 
 
 class BaseScorer(ABC):
