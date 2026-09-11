@@ -354,11 +354,23 @@ if submitted:
             st.error(err)
             st.stop()
         verdict = "PASS" if result.overall_passed else "FAIL"
-        sev_gate = "PASS" if result.redteam_severity_gate_passed else "FAIL"
+        sev_gate = (
+            "N/A"
+            if result.redteam_summary is None
+            else (
+                "N/A"
+                if result.redteam_severity_gate_passed is None
+                else "PASS" if result.redteam_severity_gate_passed else "FAIL"
+            )
+        )
         error_gate = (
             "N/A"
             if result.redteam_summary is None
-            else "PASS" if result.redteam_error_budget_passed else "FAIL"
+            else (
+                "N/A"
+                if result.redteam_error_budget_passed is None
+                else "PASS" if result.redteam_error_budget_passed else "FAIL"
+            )
         )
         redteam_summary = result.redteam_summary or {}
         redteam_total = int(redteam_summary.get("total") or 0)

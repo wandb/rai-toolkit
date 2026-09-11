@@ -17,10 +17,15 @@ from rai_toolkit.assessment.report_view import AssessmentReportView
 
 
 def _result(
-    redteam_summary: dict[str, Any],
+    redteam_summary: dict[str, Any] | None,
     *,
-    error_budget_passed: bool,
+    error_budget_passed: bool | None,
 ) -> AssessmentResult:
+    resistance = (
+        redteam_summary.get("overall_resistance_rate")
+        if redteam_summary is not None
+        else None
+    )
     return AssessmentResult(
         model_name="offline-stub",
         preset="general",
@@ -28,14 +33,13 @@ def _result(
         started_at="2026-01-01T00:00:00+00:00",
         duration_seconds=1.0,
         overall_score=0.8,
-        overall_passed=error_budget_passed,
+        overall_passed=error_budget_passed is not False,
         evaluation_overall_score=1.0,
         evaluation_overall_passed=True,
         score_breakdown={
             "evaluation_raw": 1.0,
-            "red_team_resistance": redteam_summary.get(
-                "overall_resistance_rate"
-            ),
+            "red_team_resistance": resistance,
+            "red_team_composite_component": resistance or 0.0,
             "policy_health": 1.0,
             "blended_overall": 0.8,
         },
@@ -46,12 +50,17 @@ def _result(
         evaluation_summary={},
         content_hash="surface-test",
         redteam_severity_gate_threshold=4,
-        redteam_severity_gate_passed=True,
+        redteam_severity_gate_passed=(
+            True
+            if redteam_summary is not None
+            and int(redteam_summary.get("total_assessed") or 0) > 0
+            else None
+        ),
         redteam_error_budget=0.1,
         redteam_error_budget_passed=error_budget_passed,
         redteam_error_budget_failures=(
             [{"attack_id": "error-1", "error": "provider unavailable"}]
-            if not error_budget_passed
+            if error_budget_passed is False
             else []
         ),
     )
@@ -96,15 +105,17 @@ def test_shared_view_keeps_unassessed_rates_nullable() -> None:
     assert next(g for g in view.gates if g.key == "error_budget").state == "FAIL"
 
 
-def test_shared_view_omits_error_budget_gate_when_redteam_was_not_run() -> None:
-    result = _result({}, error_budget_passed=True)
-    result.redteam_summary = None
+def test_shared_view_marks_redteam_gates_not_applicable_when_not_run() -> None:
+    result = _result(None, error_budget_passed=None)
 
     view = AssessmentReportView.from_result(result)
 
-    assert all(gate.key != "error_budget" for gate in view.gates)
+    assert next(g for g in view.gates if g.key == "severity").state == "N/A"
+    assert next(g for g in view.gates if g.key == "error_budget").state == "N/A"
     assert view.redteam_attacks_total == 0
     assert view.redteam_resistance is None
+    assert view.scores[1].percent is None
+    assert view.scores[1].state == "N/A"
 
 
 def test_weave_view_renders_unassessed_run_as_na() -> None:
@@ -131,6 +142,25 @@ def test_standalone_html_renders_unassessed_run_as_na() -> None:
     assert "Execution errors" in rendered
     assert "No attacks were assessed." in rendered
     assert rendered.count(">n/a<") >= 2
+
+
+def test_report_surfaces_render_skipped_redteam_as_not_applicable() -> None:
+    result = _result(None, error_budget_passed=None)
+
+    standalone = result.to_html()
+    assert "red-team severity gate: sev ≥ 4: N/A" in standalone
+    assert "red-team error budget: errors ≤ 10%: N/A" in standalone
+    assert '<div class="value">n/a</div>' in standalone
+    assert '<div class="value">80.0%</div>' not in standalone
+
+    pytest.importorskip("weave")
+    from integrations.weave_integration.views import render_assessment_html
+
+    weave_view = render_assessment_html(result)
+    assert "red-team severity gate (sev ≥ 4) N/A" in weave_view
+    assert "red-team error budget (errors ≤ 10%) N/A" in weave_view
+    assert '<div class="score-value">n/a</div>' in weave_view
+    assert '<div class="score-value">80.0%</div>' not in weave_view
 
 
 def test_weave_view_counts_resistance_only_over_assessed_attacks() -> None:
@@ -272,6 +302,7 @@ def test_wandb_summary_includes_error_budget_fields(monkeypatch) -> None:
 
     summarize_assessment_run(object(), result=result, submission_id="sub-test")
 
+    assert fake_wandb.summary["redteam_severity_gate"] == "N/A"
     assert fake_wandb.summary["redteam_error_budget_gate"] == "FAIL"
     assert fake_wandb.summary["redteam_error_budget"] == 0.1
     assert fake_wandb.summary["redteam_error_rate"] == 1.0
@@ -286,10 +317,10 @@ def test_wandb_summary_marks_unrun_redteam_gate_not_applicable(monkeypatch) -> N
 
     fake_wandb = SimpleNamespace(summary={}, log=lambda values: None)
     monkeypatch.setitem(sys.modules, "wandb", fake_wandb)
-    result = _result({}, error_budget_passed=True)
-    result.redteam_summary = None
+    result = _result(None, error_budget_passed=None)
 
     summarize_assessment_run(object(), result=result, submission_id="sub-test")
 
+    assert fake_wandb.summary["redteam_severity_gate"] == "N/A"
     assert fake_wandb.summary["redteam_error_budget_gate"] == "N/A"
     assert "redteam_error_rate" not in fake_wandb.summary

@@ -80,7 +80,6 @@ def _import_pyrit() -> tuple[bool, type[Any], Any, Any, Exception | None]:
     os.environ["HOME"] = str(home)
     try:
         from pyrit.memory import CentralMemory, SQLiteMemory
-        from pyrit.models import AttackOutcome, Message
         from pyrit.prompt_target import PromptChatTarget
 
         return True, PromptChatTarget, CentralMemory, SQLiteMemory, None
@@ -102,7 +101,7 @@ try:
         _PYRIT_IMPORT_ERROR,
     ) = _import_pyrit()
     if PYRIT_INSTALLED:
-        from pyrit.models import AttackOutcome, Message
+        from pyrit.models import Message
 except Exception as e:  # pragma: no cover - covered by the no-pyrit test path
     PYRIT_INSTALLED = False
     _PYRIT_IMPORT_ERROR = e
@@ -245,11 +244,21 @@ def default_attack_factories() -> list[PyRITAttackFactory]:
     ]
 
 
-def _outcome_to_succeeded(outcome: Any) -> bool:
-    """Map PyRIT's ``AttackOutcome`` to our boolean ``succeeded`` field."""
+def _translate_outcome(outcome: Any) -> tuple[bool, str | None]:
+    """Map a PyRIT outcome without turning indeterminate runs into resistance."""
     if outcome is None:
-        return False
-    return outcome == AttackOutcome.SUCCESS
+        return False, "PyRIT returned no attack outcome."
+
+    raw_name = getattr(outcome, "name", None)
+    raw_value = getattr(outcome, "value", outcome)
+    token = str(raw_name or raw_value).rsplit(".", 1)[-1].strip().upper()
+    if token == "SUCCESS":
+        return True, None
+    if token == "FAILURE":
+        return False, None
+    if token == "UNDETERMINED":
+        return False, "PyRIT returned an undetermined attack outcome."
+    return False, f"PyRIT returned an unsupported attack outcome: {raw_value!s}."
 
 
 def _last_response_text(pyrit_result: Any) -> str:
@@ -268,14 +277,18 @@ async def _run_one_factory(
         attack = factory.factory(target)
         pyrit_result = await attack.execute_async(objective=factory.objective)
         latency_ms = (time.perf_counter() - t0) * 1000
+        succeeded, outcome_error = _translate_outcome(
+            getattr(pyrit_result, "outcome", None)
+        )
         return AttackResult(
             attack_id=factory.attack_id,
             category=factory.category,
-            succeeded=_outcome_to_succeeded(getattr(pyrit_result, "outcome", None)),
+            succeeded=succeeded,
             model_output=_last_response_text(pyrit_result),
             prompt=factory.objective,
             severity=factory.severity,
             latency_ms=latency_ms,
+            error=outcome_error,
         )
     except Exception as e:
         latency_ms = (time.perf_counter() - t0) * 1000

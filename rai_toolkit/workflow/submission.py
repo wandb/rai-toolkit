@@ -301,7 +301,7 @@ def auto_decide(
                 )
             )
 
-    if not result.redteam_severity_gate_passed:
+    if result.redteam_severity_gate_passed is False:
         if recommend == Decision.APPROVE:
             recommend = Decision.REQUEST_CHANGES
         failure_count = len(result.redteam_severity_gate_failures)
@@ -325,7 +325,7 @@ def auto_decide(
         )
 
     rt = result.redteam_summary
-    if not getattr(result, "redteam_error_budget_passed", True):
+    if getattr(result, "redteam_error_budget_passed", True) is False:
         if recommend == Decision.APPROVE:
             recommend = Decision.REQUEST_CHANGES
         total = int((rt or {}).get("total") or 0)

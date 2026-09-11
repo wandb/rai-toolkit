@@ -84,8 +84,11 @@ view = AssessmentReportView.from_result(result)
 
 
 def _gate_chip(label: str, state: str, note: str = "") -> str:
-    color = "#0a5c2a" if state == "PASS" else "#8a1a1a"
-    bg = "#d4f4dd" if state == "PASS" else "#fce0e0"
+    color, bg = {
+        "PASS": ("#0a5c2a", "#d4f4dd"),
+        "FAIL": ("#8a1a1a", "#fce0e0"),
+        "N/A": ("#555", "#eee"),
+    }.get(state, ("#555", "#eee"))
     label_html = f"{label} ({note})" if note else label
     return (
         f'<span style="display:inline-block;padding:3px 10px;border-radius:12px;'

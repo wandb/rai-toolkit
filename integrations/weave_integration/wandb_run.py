@@ -29,6 +29,12 @@ from typing import Any, Iterator
 logger = logging.getLogger(__name__)
 
 
+def _gate_state(passed: bool | None) -> str:
+    if passed is None:
+        return "N/A"
+    return "PASS" if passed else "FAIL"
+
+
 @contextlib.contextmanager
 def wandb_run_context(
     project: str | None,
@@ -159,18 +165,16 @@ def summarize_assessment_run(
             "evaluation_score": float(getattr(result, "evaluation_overall_score", 0.0) or 0.0),
             "composite_score": float(getattr(result, "overall_score", 0.0) or 0.0),
             "redteam_severity_gate": (
-                "PASS" if getattr(result, "redteam_severity_gate_passed", True) else "FAIL"
+                "N/A"
+                if redteam_report is None
+                else _gate_state(getattr(result, "redteam_severity_gate_passed", None))
             ),
             "redteam_severity_threshold":
                 getattr(result, "redteam_severity_gate_threshold", None),
             "redteam_error_budget_gate": (
                 "N/A"
                 if redteam_report is None
-                else (
-                    "PASS"
-                    if getattr(result, "redteam_error_budget_passed", True)
-                    else "FAIL"
-                )
+                else _gate_state(getattr(result, "redteam_error_budget_passed", None))
             ),
             "redteam_error_budget": getattr(result, "redteam_error_budget", None),
             "redteam_error_rate": redteam_summary.get("error_rate"),

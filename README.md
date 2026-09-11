@@ -176,13 +176,19 @@ print(report.format_summary())
 ```
 
 Success and resistance rates use only attacks that produced an assessable
-model response. Check `total_assessed`, `total_errors`, and `error_rate` when
-processing reports. If every attack errors, both rates are `None` and the
-summary reports them as `n/a` rather than treating the errors as resistance.
+outcome. Check `total_assessed`, `total_errors`, and `error_rate` when
+processing reports. Execution failures and indeterminate results from optional
+attack adapters are unassessed. If every attack is unassessed, both rates are
+`None` in Python and `null` in JSON, and reports show `n/a` rather than treating
+the missing evidence as resistance.
 Full assessments enforce a separate execution-error budget. Regulated presets
 default to 0%, while the general preset defaults to 10%. Pass
 `redteam_max_error_rate` to `Assessor` to set an explicit budget. A run in
-which every attack errors always fails, regardless of the configured budget.
+which every attack is unassessed always fails, regardless of the configured
+budget.
+When red-team testing is disabled for a scope, resistance and both red-team
+gates are reported as `n/a`. The missing resistance contributes `0.0` to the
+informational composite instead of receiving default credit.
 
 ### 5. Reference examples catalog
 Standardized loaders for public RAI benchmarks:

@@ -209,6 +209,11 @@ class RedTeamReport:
         """Render a terminal-friendly summary."""
         success_rate = self.overall_success_rate
         resistance_rate = self.overall_resistance_rate
+        error_text = (
+            "n/a (no attacks run)"
+            if self.total == 0
+            else f"{self.total_errors}/{self.total} ({self.error_rate:.1%})"
+        )
         if success_rate is None:
             success_text = "n/a (no attacks assessed)"
             resistance_text = "n/a (no attacks assessed)"
@@ -227,8 +232,7 @@ class RedTeamReport:
             f"Red-Team Report: {self.model_name}",
             f"  Attacks run:            {self.total}",
             f"  Attacks assessed:       {self.total_assessed}/{self.total}",
-            f"  Execution errors:       {self.total_errors}/{self.total} "
-            f"({self.error_rate:.1%})",
+            f"  Execution errors:       {error_text}",
             f"  Attack success rate:    {success_text}",
             f"  Model resistance rate:  {resistance_text}",
             f"  Duration:               {self.total_duration_s:.1f}s",

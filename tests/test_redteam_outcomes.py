@@ -123,6 +123,8 @@ def test_empty_report_has_zero_error_rate_but_no_assessment_rates() -> None:
     assert report.error_rate == 0.0
     assert report.overall_success_rate is None
     assert report.overall_resistance_rate is None
+    assert "Execution errors:       n/a (no attacks run)" in report.format_summary()
+    assert "Execution errors:       0/0 (0.0%)" not in report.format_summary()
 
 
 def test_serialization_adds_outcomes_and_assessment_counts() -> None:

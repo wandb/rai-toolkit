@@ -135,36 +135,36 @@ class AssessmentResult:
     weave_evaluation_summary: dict[str, Any] | None = None
     cost_estimate: dict[str, Any] | None = None
     redteam_severity_gate_threshold: int = 0
-    redteam_severity_gate_passed: bool = True
+    redteam_severity_gate_passed: bool | None = None
     redteam_severity_gate_failures: list[dict[str, Any]] = field(default_factory=list)
     coverage_gaps: list[dict[str, Any]] = field(default_factory=list)
     redteam_error_budget: float = _DEFAULT_REDTEAM_MAX_ERROR_RATE
-    redteam_error_budget_passed: bool = True
+    redteam_error_budget_passed: bool | None = None
     redteam_error_budget_failures: list[dict[str, Any]] = field(default_factory=list)
 
     def format_summary(self) -> str:
         """Render a terminal-friendly summary."""
         verdict = "PASS" if self.overall_passed else "FAIL"
         ev_gate = "PASS" if self.evaluation_overall_passed else "FAIL"
-        sev_gate = "PASS" if self.redteam_severity_gate_passed else "FAIL"
-        error_gate = (
-            "N/A"
-            if self.redteam_summary is None
-            else "PASS" if self.redteam_error_budget_passed else "FAIL"
-        )
+        sev_gate = _format_gate_state(self.redteam_severity_gate_passed)
+        error_gate = _format_gate_state(self.redteam_error_budget_passed)
         bd = self.score_breakdown
         sev_threshold = self.redteam_severity_gate_threshold or "-"
         redteam_metrics = None
-        if self.redteam_summary:
+        if self.redteam_summary is not None:
             from rai_toolkit.assessment.report_view import _normalize_redteam_summary
 
             redteam_metrics = _normalize_redteam_summary(self.redteam_summary)
         resistance = (
             redteam_metrics.resistance_rate
             if redteam_metrics is not None
-            else bd.get("red_team_resistance", 0)
+            else None
         )
-        resistance_text = _format_optional_rate(resistance)
+        resistance_text = (
+            _format_optional_rate(resistance)
+            if redteam_metrics is not None
+            else "n/a (red-team not run)"
+        )
         lines = [
             "",
             "=" * 66,
@@ -213,7 +213,7 @@ class AssessmentResult:
             for note in f.findings:
                 lines.append(f"    · {note}")
 
-        if self.redteam_summary:
+        if self.redteam_summary is not None:
             assert redteam_metrics is not None
             lines += [
                 "",
@@ -470,17 +470,27 @@ class Assessor:
             if self.redteam_severity_gate
             else []
         )
-        redteam_severity_gate_passed = not severity_gate_failures
+        redteam_severity_gate_passed = (
+            None
+            if redteam_report is None
+            or redteam_report.total_assessed == 0
+            or not self.redteam_severity_gate
+            else not severity_gate_failures
+        )
         error_budget_failures = _redteam_error_budget_failures(
             redteam_report, self.redteam_max_error_rate
         )
-        redteam_error_budget_passed = not error_budget_failures
+        redteam_error_budget_passed = (
+            None
+            if redteam_report is None or redteam_report.total == 0
+            else not error_budget_failures
+        )
         overall_passed = (
             eval_results.overall_passed
             and all(f.passed for f in frameworks)
             and not any(v.severity.value in ("critical", "high") for v in policy_violations)
-            and redteam_severity_gate_passed
-            and redteam_error_budget_passed
+            and redteam_severity_gate_passed is not False
+            and redteam_error_budget_passed is not False
         )
         verdict_rationale = _verdict_rationale(
             eval_results,
@@ -1218,7 +1228,7 @@ def _compute_composite_score(
     """
     eval_raw = float(eval_results.overall_score)
     reported_resistance = (
-        redteam_report.overall_resistance_rate if redteam_report else 0.8
+        redteam_report.overall_resistance_rate if redteam_report else None
     )
     # A report with no assessed attacks contributes no resistance credit. The
     # reported rate remains None so user-facing surfaces render it as n/a.
@@ -1639,6 +1649,12 @@ def _pill(status: str) -> str:
 
 def _fmt_pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.1%}"
+
+
+def _format_gate_state(passed: bool | None) -> str:
+    if passed is None:
+        return "N/A"
+    return "PASS" if passed else "FAIL"
 
 
 def _format_optional_rate(value: Any) -> str:

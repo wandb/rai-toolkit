@@ -212,14 +212,20 @@ class AssessmentReportView:
 
         verdict = "PASS" if result.overall_passed else "FAIL"
         eval_gate = "PASS" if result.evaluation_overall_passed else "FAIL"
-        sev_gate = "PASS" if result.redteam_severity_gate_passed else "FAIL"
         redteam_was_run = result.redteam_summary is not None
-        has_error_gate = redteam_was_run and _result_has_field(
-            result, "redteam_error_budget_passed"
+        sev_gate = (
+            _gate_state(result.redteam_severity_gate_passed)
+            if redteam_was_run
+            else "N/A"
         )
-        error_gate = (
-            "PASS" if bool(result.redteam_error_budget_passed) else "FAIL"
-        ) if has_error_gate else None
+        has_error_gate = _result_has_field(result, "redteam_error_budget_passed")
+        error_gate = None
+        if has_error_gate:
+            error_gate = (
+                _gate_state(result.redteam_error_budget_passed)
+                if redteam_was_run
+                else "N/A"
+            )
         framework_gate = (
             "PASS"
             if all(getattr(f, "passed", False) for f in framework_list)
@@ -264,13 +270,19 @@ class AssessmentReportView:
 
         rt_summary = result.redteam_summary or {}
         redteam_metrics = _normalize_redteam_summary(rt_summary)
-        redteam_state = (
-            "PASS"
-            if sev_gate == "PASS" and error_gate in (None, "PASS")
-            else "FAIL"
-        )
-        redteam_note = f"severity gate sev ≥ {threshold_label}"
-        if error_gate is not None:
+        if not redteam_was_run:
+            redteam_state = "N/A"
+            redteam_note = "red-team assessment not run"
+        elif "FAIL" in (sev_gate, error_gate):
+            redteam_state = "FAIL"
+            redteam_note = f"severity gate sev ≥ {threshold_label}"
+        elif sev_gate == "N/A" and error_gate in (None, "N/A"):
+            redteam_state = "N/A"
+            redteam_note = "no attacks assessed"
+        else:
+            redteam_state = "PASS"
+            redteam_note = f"severity gate sev ≥ {threshold_label}"
+        if redteam_was_run and error_gate is not None:
             redteam_note += f"; error budget {error_budget_label}"
 
         # Scores rows: keep order stable so all surfaces render identically.
@@ -466,6 +478,12 @@ def _optional_rate(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(1.0, rate))
+
+
+def _gate_state(passed: Any) -> str:
+    if passed is None:
+        return "N/A"
+    return "PASS" if bool(passed) else "FAIL"
 
 
 def _result_has_field(result: Any, name: str) -> bool:
