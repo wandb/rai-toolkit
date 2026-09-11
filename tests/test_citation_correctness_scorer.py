@@ -2402,17 +2402,71 @@ def test_crlf_and_lf_responses_parse_identically() -> None:
     ]
 
 
-def test_a_fence_opened_mid_line_is_still_code_when_it_closes() -> None:
+# Three more over-masking cases, found by fuzzing against a reference CommonMark
+# renderer rather than by hand. Each hid a citation and passed the row, the same
+# direction as the reported boundaries.
+def test_a_fence_info_string_is_not_code() -> None:
+    # The info string is a language tag, metadata rather than content, so the
+    # span starts at the line after the opening fence.
+    output = "Notices are required [adverse-action].\n```[reg-z-2024]\ncode\n```\n"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+def test_a_code_span_does_not_cross_a_blank_line() -> None:
+    # A blank line ends the paragraph, so a span cannot reach out of the one it
+    # opened in. Two unrelated backticks in different paragraphs were pairing.
+    output = "Notices are required [adverse-action]. `x\n\ny [reg-z-2024]` z"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+def test_a_run_before_a_fence_does_not_pair_with_one_after_it() -> None:
+    # The fence line is a block boundary even though the line itself is not
+    # masked, so an inline span cannot reach across it.
+    output = "Notices are required [adverse-action]. `x\n```\ncode\n```\n[reg-z-2024]` y"
+
+    citations = _extract_citations(output)
+
+    assert "reg-z-2024" in [c.marker for c in citations]
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        "Notices are required [adverse-action].\n```[reg-z-2024]\ncode\n```\n",
+        "Notices are required [adverse-action]. `x\n\ny [reg-z-2024]` z",
+        "Notices are required [adverse-action]. ```\nlookup [reg-z-2024]\n```",
+    ],
+    ids=["info_string", "blank_line", "mid_line_run"],
+)
+def test_these_over_masking_cases_still_fail_on_the_citation(form: str) -> None:
+    scorer = _covering_scorer(form, CONTEXT)
+
+    result = scorer.score(form, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+def test_a_run_opened_mid_line_does_not_open_a_fence() -> None:
+    # A fence opens a line or it is not a fence. Treating a mid-line run as one
+    # was an extension of my own, and it masked prose that no Markdown renderer
+    # treats as code - hiding a citation and passing the row.
     output = "Notices are required [adverse-action]. ```\nlookup [reg-z-2024]\n```"
 
     citations = _extract_citations(output)
 
-    assert [c.marker for c in citations] == ["adverse-action"]
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
 
 
 def test_a_mid_line_run_that_never_closes_does_not_swallow_citations() -> None:
-    # Only a fence opening a line may run to the end of the response. A stray
-    # run in prose must not hide every citation after it.
+    # A stray run in prose must not hide the citations after it.
     output = "See ``` for fences.\nMore prose.\nNotices are required [adverse-action]."
 
     citations = _extract_citations(output)

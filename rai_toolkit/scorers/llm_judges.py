@@ -1043,8 +1043,13 @@ _FENCE_CLOSE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*$")
 # one-backtick opener closed on the first tick of a later two-backtick run, so
 # an unmatched delimiter masked the text between them. The body may cross a line
 # ending, which Markdown allows.
+# The body may cross a line ending but not a blank line: a blank line ends the
+# paragraph, and a span cannot reach out of the paragraph it opened in. Allowing
+# it masked the text between two unrelated backticks in different paragraphs.
 _INLINE_CODE_PATTERN = re.compile(
-    r"(?<!`)(?P<ticks>`+)(?!`)[\s\S]*?(?<!`)(?P=ticks)(?!`)"
+    r"(?<!`)(?P<ticks>`+)(?!`)"
+    r"(?:(?!\r?\n[ \t]*\r?\n)[\s\S])*?"
+    r"(?<!`)(?P=ticks)(?!`)"
 )
 
 
@@ -1070,7 +1075,7 @@ def _line_body(line: str) -> str:
     return line.rstrip("\r\n")
 
 
-def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
+def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
     """Ranges covered by fenced code blocks.
 
     Scanned rather than matched with a single expression because the closing
@@ -1087,7 +1092,11 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
     it.
     """
     lines, offsets = _line_offsets(text)
-    spans: list[tuple[int, int]] = []
+    # (block_start, content_start, end). The block starts at the fence marker
+    # and the content after the opening line: the info string is metadata, so it
+    # is not masked, but the line is still a block boundary that an inline span
+    # cannot reach across.
+    spans: list[tuple[int, int, int]] = []
     index = 0
     while index < len(lines):
         body = _line_body(lines[index])
@@ -1098,6 +1107,12 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
 
         fence = match.group("fence")
         indent = body[: match.start("fence")]
+        # A fence opens a line or it is not a fence. Supporting a mid-line run
+        # was an extension of my own, and it masked prose that no Markdown
+        # renderer treats as code - hiding a citation and passing the row.
+        if indent.strip():
+            index += 1
+            continue
         # At most three leading spaces open a fence. Four or more is an
         # indented code block, which ends at the first unindented line rather
         # than running on, so treating one as a fence masked every citation
@@ -1116,7 +1131,11 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
             index += 1
             continue
 
-        start = offsets[index] + (0 if at_line_start else match.start("fence"))
+        # The span starts at the content, not at the fence marker: the opening
+        # line carries the info string, which is metadata rather than code.
+        # Masking it hid a citation written there and passed the row.
+        block_start = offsets[index] + (0 if at_line_start else match.start("fence"))
+        start = offsets[index] + len(lines[index])
         closed_at = None
         probe = index + 1
         while probe < len(lines):
@@ -1134,10 +1153,10 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int]]:
             if not at_line_start:
                 index += 1
                 continue
-            spans.append((start, len(text)))
+            spans.append((block_start, start, len(text)))
             break
 
-        spans.append((start, offsets[closed_at] + len(lines[closed_at])))
+        spans.append((block_start, start, offsets[closed_at] + len(lines[closed_at])))
         index = closed_at + 1
     return spans
 
@@ -1157,16 +1176,18 @@ def _code_spans(text: str) -> list[tuple[int, int]]:
     a backtick run inside a fenced block is not read as an inline span.
     """
     fenced = _fenced_code_spans(text)
-    spans: list[tuple[int, int]] = list(fenced)
+    spans: list[tuple[int, int]] = [(start, end) for _, start, end in fenced]
 
-    # Inline spans are sought only in the gaps between fenced regions, never
+    # Inline spans are sought only in the gaps between fenced blocks, never
     # across one. Markdown resolves block structure before inline structure, so
     # a fence line ends the paragraph an inline span would have to live in: a
-    # backtick run before it cannot pair with one after it.
+    # backtick run before it cannot pair with one after it. The gap stops at the
+    # fence marker even though the marker line itself is not masked.
+    barriers = sorted((block, end) for block, _, end in fenced)
     cursor = 0
-    for start, end in sorted(fenced) + [(len(text), len(text))]:
-        if cursor < start:
-            segment = text[cursor:start]
+    for block_start, end in barriers + [(len(text), len(text))]:
+        if cursor < block_start:
+            segment = text[cursor:block_start]
             for match in _INLINE_CODE_PATTERN.finditer(segment):
                 spans.append((cursor + match.start(), cursor + match.end()))
         cursor = max(cursor, end)
