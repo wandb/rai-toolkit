@@ -2402,13 +2402,116 @@ def test_crlf_and_lf_responses_parse_identically() -> None:
     ]
 
 
+# CommonMark accepts CR, LF and CRLF as line endings. The blank-line rule was
+# written for LF and CRLF only, so two bare CRs did not end the paragraph and an
+# inline span reached across it, masking the citation between them.
+BLANK_LINE_ENDINGS = {"cr": "\r", "lf": "\n", "crlf": "\r\n"}
+
+
+@pytest.mark.parametrize(
+    ("eol", "spans"),
+    [("\r", True), ("\n", True), ("\r\n", True)],
+    ids=["cr", "lf", "crlf"],
+)
+def test_a_single_line_ending_does_not_break_a_code_span(eol: str, spans: bool) -> None:
+    # One line ending is not a blank line. CRLF in particular must count as one:
+    # reading it as a bare CR followed by an LF broke every span in a CRLF
+    # response.
+    output = (
+        f"Notices are required [adverse-action]. `x{eol}"
+        f"y Rates capped [reg-z-2024]` z"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+@pytest.mark.parametrize(
+    "eol", sorted(BLANK_LINE_ENDINGS), ids=sorted(BLANK_LINE_ENDINGS)
+)
+def test_a_code_span_does_not_cross_a_blank_line_of_any_ending(eol: str) -> None:
+    end = BLANK_LINE_ENDINGS[eol]
+    output = (
+        f"Notices are required [adverse-action]. `x{end}{end}"
+        f"y Rates capped [reg-z-2024]` z"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize(
+    "eol", sorted(BLANK_LINE_ENDINGS), ids=sorted(BLANK_LINE_ENDINGS)
+)
+def test_a_blank_line_of_any_ending_still_fails_on_the_citation(eol: str) -> None:
+    end = BLANK_LINE_ENDINGS[eol]
+    output = (
+        f"Notices are required [adverse-action]. `x{end}{end}"
+        f"y Rates capped [reg-z-2024]` z"
+    )
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+# A closing fence carries at most three leading spaces, the same bound as an
+# opener. A deeper one is indented content, so the block stays open.
+@pytest.mark.parametrize(
+    "indent", ["    ", "     ", "\t", " \t"], ids=["four", "five", "tab", "space_tab"]
+)
+def test_an_over_indented_closer_does_not_end_the_block(indent: str) -> None:
+    output = (
+        f"Notices are required [adverse-action].\n```\ncode\n{indent}```\n"
+        f"still code [reg-z-2024]"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+@pytest.mark.parametrize("indent", ["", " ", "  ", "   "], ids=["0", "1", "2", "3"])
+def test_a_closer_indented_up_to_three_spaces_still_closes(indent: str) -> None:
+    # The other side of the bound: the rule is a range, not a floor.
+    output = (
+        f"Notices are required [adverse-action].\n```\ncode\n{indent}```\n"
+        f"Rates capped [reg-z-2024]"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
 # Three more over-masking cases, found by fuzzing against a reference CommonMark
 # renderer rather than by hand. Each hid a citation and passed the row, the same
 # direction as the reported boundaries.
-def test_a_fence_info_string_is_not_code() -> None:
-    # The info string is a language tag, metadata rather than content, so the
-    # span starts at the line after the opening fence.
-    output = "Notices are required [adverse-action].\n```[reg-z-2024]\ncode\n```\n"
+@pytest.mark.parametrize("fence", ["```", "~~~"], ids=["backtick", "tilde"])
+def test_a_token_in_a_fence_info_string_is_not_a_citation(fence: str) -> None:
+    # A renderer puts the info string outside <code>, since it is a language tag
+    # rather than code. It is metadata either way, not prose the model wrote, so
+    # a token there is not something the response cited.
+    output = (
+        f"Notices are required [adverse-action].\n{fence}[reg-z-2024]\n"
+        f"code\n{fence}\n"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_citation_after_a_fence_with_an_info_string_is_still_read() -> None:
+    output = (
+        "Notices are required [adverse-action].\n```python\ncode\n```\n\n"
+        "Rates capped [reg-z-2024]."
+    )
 
     citations = _extract_citations(output)
 
@@ -2438,11 +2541,10 @@ def test_a_run_before_a_fence_does_not_pair_with_one_after_it() -> None:
 @pytest.mark.parametrize(
     "form",
     [
-        "Notices are required [adverse-action].\n```[reg-z-2024]\ncode\n```\n",
         "Notices are required [adverse-action]. `x\n\ny [reg-z-2024]` z",
         "Notices are required [adverse-action]. ```\nlookup [reg-z-2024]\n```",
     ],
-    ids=["info_string", "blank_line", "mid_line_run"],
+    ids=["blank_line", "mid_line_run"],
 )
 def test_these_over_masking_cases_still_fail_on_the_citation(form: str) -> None:
     scorer = _covering_scorer(form, CONTEXT)

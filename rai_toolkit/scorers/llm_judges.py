@@ -1036,7 +1036,7 @@ def _is_fabrication_candidate(
 _FENCE_OPEN = re.compile(r"(?P<fence>`{3,}|~{3,})(?P<info>[^\n]*)$")
 # A closing fence is a run of the same character on a line of its own, and may be
 # *longer* than the opener - CommonMark requires at least as long, not equal.
-_FENCE_CLOSE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*$")
+_FENCE_CLOSE = re.compile(r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})[ \t]*$")
 
 # An inline span opens with a run of backticks and closes with a run of exactly
 # the same length. The lookarounds make both runs maximal: without them a
@@ -1048,7 +1048,7 @@ _FENCE_CLOSE = re.compile(r"^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*$")
 # it masked the text between two unrelated backticks in different paragraphs.
 _INLINE_CODE_PATTERN = re.compile(
     r"(?<!`)(?P<ticks>`+)(?!`)"
-    r"(?:(?!\r?\n[ \t]*\r?\n)[\s\S])*?"
+    r"(?:(?!(?:\r\n|\r(?!\n)|\n)[ \t]*(?:\r\n|\r(?!\n)|\n))[\s\S])*?"
     r"(?<!`)(?P=ticks)(?!`)"
 )
 
@@ -1131,11 +1131,13 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
             index += 1
             continue
 
-        # The span starts at the content, not at the fence marker: the opening
-        # line carries the info string, which is metadata rather than code.
-        # Masking it hid a citation written there and passed the row.
-        block_start = offsets[index] + (0 if at_line_start else match.start("fence"))
-        start = offsets[index] + len(lines[index])
+        # The span covers the opening line as well as the content. A renderer
+        # puts the info string outside <code>, because it is a language tag
+        # rather than code - but it is metadata either way, not prose the model
+        # wrote, so a token there is not a citation and must not be extracted.
+        # This is the one place the masking deliberately differs from a
+        # renderer's idea of what is code.
+        block_start = start = offsets[index]
         closed_at = None
         probe = index + 1
         while probe < len(lines):
@@ -1144,6 +1146,10 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
                 closer is not None
                 and closer.group("fence")[0] == fence[0]
                 and len(closer.group("fence")) >= len(fence)
+                # A closer carries at most three leading spaces, the same bound
+                # as an opener. A deeper one is indented content, so the block
+                # stays open and the text after it is still code.
+                and len(closer.group("indent").expandtabs(4)) <= 3
             ):
                 closed_at = probe
                 break
