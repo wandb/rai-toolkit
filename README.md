@@ -172,8 +172,17 @@ refusal bypass. Optional third-party red-team tools live under
 ```python
 from rai_toolkit.redteam import AttackRunner
 report = await AttackRunner(my_model).run_all()
-print(f"Resistance rate: {report.overall_resistance_rate:.1%}")
+print(report.format_summary())
 ```
+
+Success and resistance rates use only attacks that produced an assessable
+model response. Check `total_assessed`, `total_errors`, and `error_rate` when
+processing reports. If every attack errors, both rates are `None` and the
+summary reports them as `n/a` rather than treating the errors as resistance.
+Full assessments enforce a separate execution-error budget. Regulated presets
+default to 0%, while the general preset defaults to 10%. Pass
+`redteam_max_error_rate` to `Assessor` to set an explicit budget. A run in
+which every attack errors always fails, regardless of the configured budget.
 
 ### 5. Reference examples catalog
 Standardized loaders for public RAI benchmarks:

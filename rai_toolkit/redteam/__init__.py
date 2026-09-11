@@ -15,9 +15,7 @@ Example::
     runner = AttackRunner(model)
     report = await runner.run_all()
 
-    print(f"Attack success rate: {report.overall_success_rate:.1%}")
-    for family, stats in report.by_family.items():
-        print(f"  {family}: {stats.success_rate:.1%} ({stats.successes}/{stats.total})")
+    print(report.format_summary())
 """
 
 from rai_toolkit.redteam.attacks import (
@@ -27,6 +25,7 @@ from rai_toolkit.redteam.attacks import (
     AttackTemplate,
 )
 from rai_toolkit.redteam.runner import (
+    AttackOutcome,
     AttackResult,
     AttackRunner,
     FamilyStats,
@@ -38,6 +37,7 @@ __all__ = [
     "Attack",
     "AttackCategory",
     "AttackTemplate",
+    "AttackOutcome",
     "AttackResult",
     "AttackRunner",
     "FamilyStats",

@@ -94,6 +94,10 @@ def _gate_chip(label: str, state: str, note: str = "") -> str:
     )
 
 
+def _format_metric(percent: float | None) -> str:
+    return "n/a" if percent is None else f"{percent:.1%}"
+
+
 verdict_html = (
     f'<span style="display:inline-block;padding:4px 12px;border-radius:12px;'
     f"font-weight:700;font-size:13px;letter-spacing:0.3px;"
@@ -122,11 +126,24 @@ if view.rationale:
         )
 
 metric_cols = st.columns(4)
-metric_cols[0].metric(view.scores[0].label, f"{view.scores[0].percent:.1%}")
-metric_cols[1].metric(view.scores[1].label, f"{view.scores[1].percent:.1%}")
-metric_cols[2].metric(view.scores[2].label, f"{view.scores[2].percent:.1%}")
+metric_cols[0].metric(view.scores[0].label, _format_metric(view.scores[0].percent))
+metric_cols[1].metric(view.scores[1].label, _format_metric(view.scores[1].percent))
+metric_cols[2].metric(view.scores[2].label, _format_metric(view.scores[2].percent))
 metric_cols[3].metric("Policy violations", view.policy_violations_count)
 st.caption(view.disclaimer + " " + view.framework_coverage_footnote)
+
+if view.redteam_errors:
+    if view.redteam_attacks_assessed:
+        st.warning(
+            f"Red-team execution errors: {view.redteam_errors} of "
+            f"{view.redteam_attacks_total} attempted attacks. Rates use only the "
+            f"{view.redteam_attacks_assessed} assessed attacks."
+        )
+    else:
+        st.error(
+            f"No red-team attacks were assessed. All {view.redteam_attacks_total} "
+            "attempted attacks ended in execution errors."
+        )
 
 if view.weave_trace_url:
     st.markdown(f"**Weave trace:** [{view.weave_trace_url}]({view.weave_trace_url})")

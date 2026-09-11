@@ -355,10 +355,29 @@ if submitted:
             st.stop()
         verdict = "PASS" if result.overall_passed else "FAIL"
         sev_gate = "PASS" if result.redteam_severity_gate_passed else "FAIL"
+        error_gate = (
+            "N/A"
+            if result.redteam_summary is None
+            else "PASS" if result.redteam_error_budget_passed else "FAIL"
+        )
+        redteam_summary = result.redteam_summary or {}
+        redteam_total = int(redteam_summary.get("total") or 0)
+        redteam_errors = int(redteam_summary.get("total_errors") or 0)
+        redteam_error_rate = float(redteam_summary.get("error_rate") or 0.0)
+        error_detail = (
+            "red-team assessment not run"
+            if result.redteam_summary is None
+            else (
+                f"{redteam_errors}/{redteam_total} errors, "
+                f"{redteam_error_rate:.0%}"
+            )
+        )
         st.write(
             f"Assessment complete in {result.duration_seconds:.1f}s. "
             f"Verdict **{verdict}**: evaluation gate {result.evaluation_overall_score:.1%}, "
             f"red-team severity gate (sev >= {result.redteam_severity_gate_threshold or '-'}) **{sev_gate}**, "
+            f"red-team error budget (<= {result.redteam_error_budget:.0%}) "
+            f"**{error_gate}** ({error_detail}), "
             f"policy violations {len(result.policy_violations)}."
         )
         st.write(
