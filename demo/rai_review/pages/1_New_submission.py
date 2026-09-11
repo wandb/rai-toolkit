@@ -193,8 +193,7 @@ enable_nemo = rcol3.checkbox(
 if enable_pyrit:
     # Surface load failures (missing install OR e.g. a version mismatch in a
     # transitive dep like openai) before the user kicks off a multi-minute
-    # assessment. Without this the assessor would just log at WARNING and the
-    # checked box silently does nothing.
+    # assessment. A requested source that cannot load fails source coverage.
     try:
         from integrations.pyrit_integration.adapter import (
             _PYRIT_IMPORT_ERROR,
@@ -207,7 +206,8 @@ if enable_pyrit:
         detail = f"\n\nUnderlying import error:\n\n`{_PYRIT_IMPORT_ERROR!r}`" if _PYRIT_IMPORT_ERROR else ""
         st.warning(
             "PyRIT could not be loaded in the active Python environment, so "
-            "PyRIT attacks will be skipped and no PyRIT traces will appear. "
+            "the requested source-coverage gate will fail and no PyRIT traces "
+            "will appear. "
             "Install (or repair) with `pip install \"rai-toolkit[pyrit]\"`."
             + detail
         )
@@ -220,7 +220,7 @@ if enable_garak:
     if not GARAK_INSTALLED:
         st.warning(
             "Garak is not installed in the active Python environment, so Garak "
-            "probes will be skipped and no Garak traces will appear."
+            "source coverage will fail and no Garak traces will appear."
         )
 
 st.subheader("Observability")
@@ -372,6 +372,16 @@ if submitted:
                 else "PASS" if result.redteam_error_budget_passed else "FAIL"
             )
         )
+        source_gate = (
+            "N/A"
+            if result.redteam_source_coverage_passed is None
+            else "PASS" if result.redteam_source_coverage_passed else "FAIL"
+        )
+        failed_sources = ", ".join(
+            str(failure.get("source") or "unknown")
+            for failure in result.redteam_source_failures
+        )
+        source_detail = failed_sources or "no source failures"
         redteam_summary = result.redteam_summary or {}
         redteam_total = int(redteam_summary.get("total") or 0)
         redteam_errors = int(redteam_summary.get("total_errors") or 0)
@@ -379,6 +389,8 @@ if submitted:
         error_detail = (
             "red-team assessment not run"
             if result.redteam_summary is None
+            else "no attacks attempted"
+            if redteam_total == 0
             else (
                 f"{redteam_errors}/{redteam_total} errors, "
                 f"{redteam_error_rate:.0%}"
@@ -390,6 +402,7 @@ if submitted:
             f"red-team severity gate (sev >= {result.redteam_severity_gate_threshold or '-'}) **{sev_gate}**, "
             f"red-team error budget (<= {result.redteam_error_budget:.0%}) "
             f"**{error_gate}** ({error_detail}), "
+            f"red-team source coverage **{source_gate}** ({source_detail}), "
             f"policy violations {len(result.policy_violations)}."
         )
         st.write(

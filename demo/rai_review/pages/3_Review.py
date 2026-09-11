@@ -148,6 +148,13 @@ if view.redteam_errors:
             "attempted attacks ended in execution errors."
         )
 
+if view.redteam_source_failures:
+    failure_text = "; ".join(
+        f"{failure.source}: {failure.error}"
+        for failure in view.redteam_source_failures
+    )
+    st.error(f"Requested red-team source coverage is incomplete. {failure_text}")
+
 if view.weave_trace_url:
     st.markdown(f"**Weave trace:** [{view.weave_trace_url}]({view.weave_trace_url})")
 

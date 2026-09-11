@@ -186,9 +186,19 @@ default to 0%, while the general preset defaults to 10%. Pass
 `redteam_max_error_rate` to `Assessor` to set an explicit budget. A run in
 which every attack is unassessed always fails, regardless of the configured
 budget.
-When red-team testing is disabled for a scope, resistance and both red-team
-gates are reported as `n/a`. The missing resistance contributes `0.0` to the
-informational composite instead of receiving default credit.
+An optional source named in `extra_redteam_sources` is part of the requested
+assessment scope. If that source is unavailable, fails before returning a
+report, or returns no attacks, the source-coverage gate fails. The failure is
+recorded separately and does not create a synthetic attack or change the
+attack error-rate denominator. Results from sources that did complete remain
+available, but incomplete source coverage contributes `0.0` red-team credit to
+the informational composite. Source setup diagnostics remain in the local
+assessment artifact. Hosted Weave views and W&B summaries retain the overall
+verdict without publishing those environment details.
+When red-team testing is disabled for a scope, or when no optional source was
+requested, non-applicable red-team gates are reported as `n/a`. Missing
+resistance contributes `0.0` to the informational composite instead of
+receiving default credit.
 
 ### 5. Reference examples catalog
 Standardized loaders for public RAI benchmarks:

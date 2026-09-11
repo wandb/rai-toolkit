@@ -15,6 +15,7 @@ from rai_toolkit.assessment.assessor import (
     AssessmentResult,
     Assessor,
     FrameworkAssessment,
+    _RedTeamSourceFailure,
     _compute_composite_score,
     _redteam_error_budget_failures,
     _redteam_severity_gate_failures,
@@ -103,6 +104,8 @@ def _assessment_result(
     error_budget_passed: bool | None = None,
     severity_gate_passed: bool | None = None,
     severity_failures: list[dict[str, Any]] | None = None,
+    source_coverage_passed: bool | None = None,
+    source_failures: list[dict[str, str]] | None = None,
 ) -> AssessmentResult:
     resistance = report.overall_resistance_rate if report is not None else None
     resolved_error_gate = (
@@ -125,6 +128,7 @@ def _assessment_result(
         overall_passed=(
             resolved_error_gate is not False
             and resolved_severity_gate is not False
+            and source_coverage_passed is not False
         ),
         evaluation_overall_score=1.0,
         evaluation_overall_passed=True,
@@ -160,6 +164,8 @@ def _assessment_result(
             if resolved_error_gate is False
             else []
         ),
+        redteam_source_coverage_passed=source_coverage_passed,
+        redteam_source_failures=list(source_failures or []),
     )
 
 
@@ -339,6 +345,27 @@ def test_composite_all_error_report_has_no_rate_and_receives_no_credit() -> None
     assert overall == pytest.approx(0.8)
 
 
+def test_composite_source_failure_preserves_observed_rate_but_removes_credit() -> None:
+    report = _report([_attack("resisted")])
+
+    overall, breakdown = _compute_composite_score(
+        _passing_evaluation(),
+        report,
+        [],
+        source_failures=[
+            _RedTeamSourceFailure(
+                source="pyrit",
+                error="The source returned no report.",
+            )
+        ],
+    )
+
+    assert report.overall_resistance_rate == 1.0
+    assert breakdown["red_team_resistance"] == 1.0
+    assert breakdown["red_team_composite_component"] == 0.0
+    assert overall == pytest.approx(0.8)
+
+
 @pytest.mark.parametrize(
     "preset",
     ["healthcare", "financial_services", "government", "hr", "general"],
@@ -366,8 +393,8 @@ def test_full_assessor_fails_closed_when_every_attack_errors_for_every_preset(
     async def passing_evaluation(*args: Any, **kwargs: Any) -> EvaluationResults:
         return _passing_evaluation()
 
-    async def all_errors() -> RedTeamReport:
-        return report
+    async def all_errors() -> tuple[RedTeamReport, list[Any]]:
+        return report, []
 
     monkeypatch.setattr(assessor, "_run_evaluation", passing_evaluation)
     monkeypatch.setattr(assessor, "_run_redteam", all_errors)
@@ -444,6 +471,28 @@ def test_auto_decide_requests_changes_for_error_budget_failure() -> None:
     assert decision.auto_recommendation is Decision.REQUEST_CHANGES
     assert any("no attack was assessed" in line for line in decision.rationale)
     assert any(item.title == "Resolve red-team execution errors" for item in decision.remediation)
+
+
+def test_auto_decide_requests_changes_for_source_coverage_failure() -> None:
+    result = _assessment_result(
+        _report([_attack("resisted")]),
+        source_coverage_passed=False,
+        source_failures=[
+            {
+                "source": "pyrit",
+                "error": "The source returned no report.",
+            }
+        ],
+    )
+
+    decision = auto_decide(result, _profile())
+
+    assert decision.auto_recommendation is Decision.REQUEST_CHANGES
+    assert any("source coverage gate failed" in line for line in decision.rationale)
+    assert any(
+        item.title == "Restore requested red-team sources"
+        for item in decision.remediation
+    )
 
 
 def test_auto_decide_handles_none_success_rate_without_comparison_error() -> None:

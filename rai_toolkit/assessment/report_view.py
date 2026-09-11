@@ -135,6 +135,14 @@ class AttackRow:
 
 
 @dataclass
+class RedTeamSourceFailureRow:
+    """A configured red-team source that did not produce attack evidence."""
+
+    source: str
+    error: str
+
+
+@dataclass
 class AssessmentReportView:
     """Structured, renderer-agnostic view of an :class:`AssessmentResult`.
 
@@ -176,6 +184,7 @@ class AssessmentReportView:
     redteam_resistance: float | None
     redteam_attack_success: float | None
     redteam_successful_attacks: list[AttackRow]
+    redteam_source_failures: list[RedTeamSourceFailureRow]
 
     # Pass-through for renderer-specific evidence rendering
     policy_violations: list[dict[str, Any]]
@@ -226,6 +235,16 @@ class AssessmentReportView:
                 if redteam_was_run
                 else "N/A"
             )
+        has_source_gate = _result_has_field(
+            result, "redteam_source_coverage_passed"
+        )
+        source_gate = None
+        if has_source_gate:
+            source_gate = (
+                _gate_state(result.redteam_source_coverage_passed)
+                if redteam_was_run
+                else "N/A"
+            )
         framework_gate = (
             "PASS"
             if all(getattr(f, "passed", False) for f in framework_list)
@@ -266,6 +285,14 @@ class AssessmentReportView:
                     threshold_note=f"errors ≤ {error_budget_label}",
                 )
             )
+        if source_gate is not None:
+            gates.append(
+                GateRow(
+                    "source_coverage",
+                    "red-team source coverage",
+                    source_gate,
+                )
+            )
         gates.append(GateRow("policy", "policy gate", policy_gate))
 
         rt_summary = result.redteam_summary or {}
@@ -273,9 +300,13 @@ class AssessmentReportView:
         if not redteam_was_run:
             redteam_state = "N/A"
             redteam_note = "red-team assessment not run"
-        elif "FAIL" in (sev_gate, error_gate):
+        elif "FAIL" in (sev_gate, error_gate, source_gate):
             redteam_state = "FAIL"
-            redteam_note = f"severity gate sev ≥ {threshold_label}"
+            redteam_note = (
+                "requested source coverage failed"
+                if source_gate == "FAIL"
+                else f"severity gate sev ≥ {threshold_label}"
+            )
         elif sev_gate == "N/A" and error_gate in (None, "N/A"):
             redteam_state = "N/A"
             redteam_note = "no attacks assessed"
@@ -331,6 +362,16 @@ class AssessmentReportView:
                 continue
             rt_attack_rows.append(_attack_row(row))
 
+        raw_source_failures = result.redteam_source_failures or []
+        source_failure_rows = [
+            RedTeamSourceFailureRow(
+                source=str(row.get("source") or "unknown"),
+                error=str(row.get("error") or "source did not complete"),
+            )
+            for row in raw_source_failures
+            if isinstance(row, dict)
+        ]
+
         subtitle_hash = (result.content_hash or "")[:8]
 
         return cls(
@@ -357,6 +398,7 @@ class AssessmentReportView:
             redteam_resistance=redteam_metrics.resistance_rate,
             redteam_attack_success=redteam_metrics.success_rate,
             redteam_successful_attacks=rt_attack_rows,
+            redteam_source_failures=source_failure_rows,
             policy_violations=[_violation_to_dict(v) for v in violations],
             policy_assessment=dict(result.policy_assessment or {}),
             severity_gate_threshold=threshold,

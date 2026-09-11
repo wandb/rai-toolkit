@@ -19,6 +19,16 @@ from rai_toolkit.models.base import ModelResponse
 logger = logging.getLogger(__name__)
 
 
+_SOURCE_COVERAGE_FAILURE_PREFIX = "Red-team source coverage gate failed:"
+_SOURCE_COVERAGE_PASS_RATIONALE = (
+    "All applicable red-team gates passed, including requested source coverage."
+)
+_LOCAL_GATE_FAILURE_RATIONALE = (
+    "A local-only evidence gate did not pass. See the local assessment report "
+    "for details."
+)
+
+
 _WEAVE_VIEW_CSS = """
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: #fafafa; }
@@ -128,6 +138,26 @@ def _score_cell(label: str, percent: float | None, bar_cls: str, note: str) -> s
     )
 
 
+def _weave_safe_rationale(
+    lines: list[str],
+    *,
+    local_gate_failed: bool = False,
+) -> list[str]:
+    """Remove local source diagnostics before publishing a hosted view."""
+    safe_lines = []
+    for line in lines:
+        if not isinstance(line, str):
+            continue
+        if line.startswith(_SOURCE_COVERAGE_FAILURE_PREFIX):
+            continue
+        if line == _SOURCE_COVERAGE_PASS_RATIONALE:
+            line = "All applicable red-team gates passed."
+        safe_lines.append(line)
+    if local_gate_failed and _LOCAL_GATE_FAILURE_RATIONALE not in safe_lines:
+        safe_lines.append(_LOCAL_GATE_FAILURE_RATIONALE)
+    return safe_lines
+
+
 def render_assessment_html(result: AssessmentResult) -> str:
     """Render a ``AssessmentResult`` as a Weave view-panel HTML doc.
 
@@ -154,8 +184,13 @@ def render_assessment_html(result: AssessmentResult) -> str:
         + (f" ({escape(g.threshold_note)})" if g.threshold_note else "")
         + f" {escape(g.state)}</span>"
         for g in view.gates
+        if g.key != "source_coverage"
     )
-    rationale_text = " ".join(escape(line) for line in view.rationale)
+    weave_rationale = _weave_safe_rationale(
+        view.rationale,
+        local_gate_failed=bool(view.redteam_source_failures),
+    )
+    rationale_text = " ".join(escape(line) for line in weave_rationale)
     rationale_html = (
         f'<div class="rationale"><b>Why {escape(view.verdict)}.</b> {rationale_text}</div>'
         if rationale_text
@@ -172,6 +207,14 @@ def render_assessment_html(result: AssessmentResult) -> str:
     # Scores: three big numbers for the main evaluation dimensions.
     eval_note = view.scores[0].note
     rt_note = view.scores[1].note
+    if view.redteam_source_failures:
+        error_gate = next(
+            (gate for gate in view.gates if gate.key == "error_budget"),
+            None,
+        )
+        rt_note = f"severity gate sev ≥ {view.severity_gate_threshold_label}"
+        if error_gate is not None:
+            rt_note += f"; error budget {error_gate.threshold_note}"
     if rt_total:
         rt_note = (
             f"{rt_assessed} of {rt_total} assessed, {rt_errors} errored; "
@@ -418,20 +461,41 @@ def _weave_set_view(name: str, body: str, mimetype: str) -> None:
 def _compact_result_view(result: Any) -> Any:
     """Surface verdict + top-line scores at the top of the op output pane.
 
-    The full ``AssessmentResult`` is preserved under ``result`` so the
-    raw data is one click away. ``cost_estimate`` is stripped from that
-    dict before it lands in Weave. Weave already records actual per-op
-    LLM spend natively, so the toolkit's static list-price estimate is
-    duplicate (and conflicting) noise in the trace UI. Non-Weave consumers
-    of ``AssessmentResult.to_dict()`` still see ``cost_estimate``; this
-    redaction is local to the Weave view.
+    Most of the ``AssessmentResult`` is preserved under ``result`` so the raw
+    assessment data is one click away. ``cost_estimate`` is stripped because
+    Weave already records actual per-op LLM spend natively. Requested-source
+    coverage and failure details are also kept local because setup diagnostics
+    can describe the assessor environment. Non-Weave consumers of
+    ``AssessmentResult.to_dict()`` retain those fields.
     """
     if not isinstance(result, AssessmentResult):
         return result
+    safe_fallback = {
+        "verdict": "PASS" if result.overall_passed else "FAIL",
+        "evaluation_score": result.evaluation_overall_score,
+        "composite_score": result.overall_score,
+        "result": None,
+    }
     try:
         result_dict = result.to_dict() if hasattr(result, "to_dict") else result
         if isinstance(result_dict, dict):
-            result_dict = {k: v for k, v in result_dict.items() if k != "cost_estimate"}
+            local_gate_failed = (
+                result_dict.get("redteam_source_coverage_passed") is False
+            )
+            private_fields = {
+                "cost_estimate",
+                "redteam_source_coverage_passed",
+                "redteam_source_failures",
+            }
+            result_dict = {
+                key: value
+                for key, value in result_dict.items()
+                if key not in private_fields
+            }
+            result_dict["verdict_rationale"] = _weave_safe_rationale(
+                list(result_dict.get("verdict_rationale") or []),
+                local_gate_failed=local_gate_failed,
+            )
         return {
             "verdict": "PASS" if result.overall_passed else "FAIL",
             "evaluation_score": result.evaluation_overall_score,
@@ -440,7 +504,7 @@ def _compact_result_view(result: Any) -> Any:
         }
     except Exception as e:  # pragma: no cover, postprocess must never break op
         logger.debug("compact result view skipped: %s", e)
-        return result
+        return safe_fallback
 
 
 def _assessment_call_display_name(call: Any) -> str:

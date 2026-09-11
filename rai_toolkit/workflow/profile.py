@@ -98,8 +98,8 @@ class ApplicationProfile:
     dataset_overrides: list[str] = field(default_factory=list)
     allow_sample_datasets: bool = False
     # Optional third-party red-team sources merged into the in-tree catalog
-    # during assessment. Recognised values: ``"pyrit"``, ``"garak"``. Skipped
-    # silently if the corresponding extra isn't installed.
+    # during assessment. Recognised values: ``"pyrit"``, ``"garak"``. A
+    # requested source that cannot run fails the source-coverage gate.
     extra_redteam_sources: list[str] = field(default_factory=list)
     # Apply NeMo Guardrails as input/output rails on the model under
     # review during assessment. Requires the ``[nemo]`` extra. Wraps the
