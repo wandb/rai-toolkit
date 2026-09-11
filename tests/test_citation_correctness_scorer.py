@@ -2402,6 +2402,42 @@ def test_crlf_and_lf_responses_parse_identically() -> None:
     ]
 
 
+# An indented code block cannot interrupt a paragraph, which is what makes the
+# rule safe to apply: a continuation line inside a list follows the item's text,
+# so it is never read as code and a citation written there is still graded.
+INDENTED_BLOCK_CASES = {
+    "at_document_start": ("    Rates capped [reg-z-2024]", False),
+    "after_a_blank_line": (
+        "Notices are required [adverse-action].\n\n    Rates [reg-z-2024]",
+        False,
+    ),
+    "tab_indented": ("\tRates capped [reg-z-2024]", False),
+    "after_a_prose_line": (
+        "Notices are required [adverse-action].\n    Rates [reg-z-2024]",
+        True,
+    ),
+    "list_continuation": (
+        "- Notices are required [adverse-action]\n    and Rates [reg-z-2024]",
+        True,
+    ),
+    "indented_only_three": (
+        "Notices are required [adverse-action].\n\n   Rates [reg-z-2024]",
+        True,
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "case", sorted(INDENTED_BLOCK_CASES), ids=sorted(INDENTED_BLOCK_CASES)
+)
+def test_an_indented_code_block_only_where_no_paragraph_is_open(case: str) -> None:
+    output, extracted = INDENTED_BLOCK_CASES[case]
+
+    citations = _extract_citations(output)
+
+    assert ("reg-z-2024" in [c.marker for c in citations]) is extracted
+
+
 # CommonMark accepts CR, LF and CRLF as line endings. The blank-line rule was
 # written for LF and CRLF only, so two bare CRs did not end the paragraph and an
 # inline span reached across it, masking the citation between them.
