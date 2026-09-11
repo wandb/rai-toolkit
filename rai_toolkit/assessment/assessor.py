@@ -1687,6 +1687,27 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "behavioral/refusal row"
     if "skipped" in details and details["skipped"] == "empty_context":
         return "no grounding context"
+    if "skipped" in details and details["skipped"] == "no_citations":
+        return "response cited no sources"
+    if "skipped" in details and details["skipped"] == "unresolved_citations":
+        return "cited sources could not be resolved"
+    if "skipped" in details and details["skipped"] == "unsupported_label_style":
+        return "source labels are not distinguishable from ordinary text"
+    if "skipped" in details and details["skipped"] == "no_occurrence_tag":
+        return "no citation tag could be constructed for this response"
+    if "skipped" in details and details["skipped"] == "invalid_judge_output":
+        return "the judge returned unusable output"
+    if "skipped" in details and details["skipped"] == "incomplete_judge_verdicts":
+        return "the judge did not assess every citation"
+    if "skipped" in details and details["skipped"] == "partial_citation_coverage":
+        return "only some of the response's citations could be resolved"
+    if "skipped" in details and details["skipped"] == "contradictory_judge_verdicts":
+        return "the judge returned conflicting outcomes for one citation"
+    if (
+        "skipped" in details
+        and details["skipped"] == "judge_score_contradicts_verdicts"
+    ):
+        return "the judge score disagreed with its own verdicts"
     if "refusal/boundary" in explanation or "refusal or boundary" in explanation:
         return "behavioral/refusal row"
     if "no grounding context" in explanation or "no context" in explanation:

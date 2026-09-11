@@ -490,13 +490,17 @@ a domain without forking scorer code.
 
 Available judge scorers include `FactualityJudge`, `FairnessJudge`,
 `ContentSafetyJudge`, `PrivacyJudge`, `SecurityJudge`, `TransparencyJudge`,
-`ExplainabilityJudge`, `RubricScorer`, and `GroundednessScorer`. The
+`ExplainabilityJudge`, `RubricScorer`, `GroundednessScorer`,
+`RetrievalRelevanceScorer`, and `CitationCorrectnessScorer`. The
 `GroundednessScorer` evaluates RAG responses only when retrieved context is
 present and retains verified supporting or contradicting spans as evidence.
 The `RetrievalRelevanceScorer` grades retrieval quality itself: it validates
 the judge's per-chunk relevance verdicts against the parsed chunks, derives
 the overall score from them, and returns un-assessed rather than silently
-passing when the judge reply cannot be trusted.
+passing when the judge reply cannot be trusted. The
+`CitationCorrectnessScorer` checks attribution: whether the source a claim
+cites is the one that actually supports it, catching fabricated and
+misattributed citations that groundedness passes.
 
 ## Weave-native evaluation in assessment
 
