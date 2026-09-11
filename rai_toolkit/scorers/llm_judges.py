@@ -181,6 +181,21 @@ class LLMJudgeScorer(BaseScorer):
         result = self._call_judge(prompts["system"], user_prompt)
 
         raw_score = float(result.get("score", 0))
+        if not math.isfinite(raw_score):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation="Judge returned non-finite score; marked un-assessed.",
+                details={
+                    "scorer_name": self.name,
+                    "raw_score": raw_score,
+                    "max_score": 3,
+                    "judge_model": self.model,
+                    "judge_response": result,
+                },
+                assessed=False,
+            )
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
         passed = ScoreNormalizer.apply_threshold(normalized, self.threshold)
 
@@ -390,6 +405,23 @@ class GroundednessScorer(LLMJudgeScorer):
         user_prompt = self._format_prompt(output=output, input=input, context=context)
         result = self._call_judge(prompts["system"], user_prompt)
         raw_score = float(result.get("score", 0))
+        if not math.isfinite(raw_score):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation="Judge returned non-finite score; marked un-assessed.",
+                details={
+                    "skipped": "non_finite_judge_score",
+                    "scorer_name": self.name,
+                    "raw_score": raw_score,
+                    "max_score": 3,
+                    "judge_model": self.model,
+                    "supporting_spans": [],
+                    "contradicting_spans": [],
+                },
+                assessed=False,
+            )
         normalized = ScoreNormalizer.from_compliance_scale(raw_score)
         raw_supporting = result.get("supporting_spans")
         raw_contradicting = result.get("contradicting_spans")
