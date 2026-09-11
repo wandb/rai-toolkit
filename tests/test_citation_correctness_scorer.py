@@ -2312,6 +2312,96 @@ def test_a_multiline_code_span_does_not_fail_a_valid_response(form: str) -> None
     assert result.details["fabricated_citations"] == []
 
 
+# Four masking boundaries where the parser treated more text as code than
+# Markdown does. Each one hid a later unsupported citation, so the row came back
+# assessed, scored 1.0 and passed - the worst direction for this scorer to be
+# wrong in. Every case asserts the citation stays visible *and* that it still
+# triggers the fabrication failure.
+MASKING_BOUNDARIES = {
+    # rstrip("\n") left the carriage return, so the closing fence never matched
+    # end-of-string and the mask ran to the end of the response.
+    "crlf_fence": (
+        "Notices are required [adverse-action].\r\n```\r\ncode\r\n```\r\n"
+        "\r\nRates capped [reg-z-2024]."
+    ),
+    # A backtick fence's info string may not contain a backtick, so this opens
+    # no block and the lines after it are ordinary prose.
+    "backtick_in_info": (
+        "Notices are required [adverse-action].\n```a`b\n"
+        "Rates capped [reg-z-2024].\n```\n"
+    ),
+    # At most three leading spaces open a fence. Four is an indented block,
+    # which ends at the first unindented line rather than running on.
+    "fence_indented_four": (
+        "Notices are required [adverse-action].\n    ```\n    code\n\n"
+        "Rates capped [reg-z-2024]."
+    ),
+    # A code span closes on a run of exactly the opener's length. Taking the
+    # closer from the first tick of a longer run masked the text between them.
+    "unmatched_single_tick": (
+        "Notices are required [adverse-action]. `x Rates capped [reg-z-2024] "
+        "``y`` z"
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "form", sorted(MASKING_BOUNDARIES), ids=sorted(MASKING_BOUNDARIES)
+)
+def test_a_masking_boundary_leaves_a_later_citation_visible(form: str) -> None:
+    output = MASKING_BOUNDARIES[form]
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize(
+    "form", sorted(MASKING_BOUNDARIES), ids=sorted(MASKING_BOUNDARIES)
+)
+def test_a_masking_boundary_still_fails_on_the_hidden_citation(form: str) -> None:
+    output = MASKING_BOUNDARIES[form]
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+@pytest.mark.parametrize("indent", [0, 1, 2, 3])
+def test_up_to_three_spaces_still_opens_a_fence(indent: int) -> None:
+    # The other side of the indent bound: the rule is a range, not a floor.
+    output = (
+        f"Notices are required [adverse-action].\n{' ' * indent}```\n"
+        f"[reg-z-2024]\n{' ' * indent}```\n"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_tilde_fence_may_carry_a_backtick_in_its_info_string() -> None:
+    # Only backtick fences restrict the info string, so the tilde form must
+    # keep masking.
+    output = "Notices are required [adverse-action].\n~~~a`b\n[reg-z-2024]\n~~~\n"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_crlf_and_lf_responses_parse_identically() -> None:
+    crlf = MASKING_BOUNDARIES["crlf_fence"]
+    lf = crlf.replace("\r\n", "\n")
+
+    assert [c.marker for c in _extract_citations(crlf)] == [
+        c.marker for c in _extract_citations(lf)
+    ]
+
+
 def test_a_fence_opened_mid_line_is_still_code_when_it_closes() -> None:
     output = "Notices are required [adverse-action]. ```\nlookup [reg-z-2024]\n```"
 
