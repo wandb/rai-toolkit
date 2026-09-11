@@ -23,9 +23,20 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from rai_toolkit.models._prompting import build_prompt_parts
-from rai_toolkit.models.base import BaseModel, ModelResponse
+from rai_toolkit.models.base import (
+    BaseModel,
+    ModelResponse,
+    _reject_unsupported_call_options,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _coerce_max_tokens(value: Any) -> int:
+    """Validate the strict portable ``max_tokens`` call-time form."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"max_tokens must be a positive integer, got {value!r}")
+    return value
 
 
 class OpenAICompatibleModel(BaseModel):
@@ -82,10 +93,25 @@ class OpenAICompatibleModel(BaseModel):
     ) -> ModelResponse:
         """Run inference through the configured chat-completions endpoint.
 
+        ``temperature`` and a positive integer ``max_tokens`` are the only
+        supported per-call overrides. Unknown options fail before a provider
+        request is built, rather than being silently discarded.
+
         Retrieved context is serialized with the input as lower-trust user data.
         Raw context never uses the privileged ``system`` role. A trusted
         interpretation policy is added to that role only when context is present.
         """
+        _reject_unsupported_call_options(
+            type(self).__name__, kwargs, {"temperature", "max_tokens"}
+        )
+        request_params: dict[str, Any] = {
+            "model": self.model,
+            "messages": [],
+            "temperature": kwargs.get("temperature", self.temperature),
+        }
+        if "max_tokens" in kwargs:
+            request_params["max_tokens"] = _coerce_max_tokens(kwargs["max_tokens"])
+
         system_prompt, user_message = build_prompt_parts(
             self.system_prompt,
             input_text,
@@ -95,12 +121,9 @@ class OpenAICompatibleModel(BaseModel):
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_message})
+        request_params["messages"] = messages
 
-        completion = await self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=kwargs.get("temperature", self.temperature),
-        )
+        completion = await self._client.chat.completions.create(**request_params)
         choice = completion.choices[0]
         usage = getattr(completion, "usage", None)
         return ModelResponse(

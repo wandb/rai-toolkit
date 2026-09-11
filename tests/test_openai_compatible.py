@@ -153,6 +153,64 @@ async def test_predict_accepts_per_call_temperature() -> None:
     assert latest_client().completions.calls[0]["temperature"] == 0.8
 
 
+async def test_predict_accepts_per_call_max_tokens() -> None:
+    model = openai_compatible.OpenAICompatibleModel(model="local-model")
+
+    await model.predict("Review this answer.", max_tokens=512)
+
+    assert latest_client().completions.calls[0]["max_tokens"] == 512
+
+
+async def test_predict_omits_max_tokens_without_override() -> None:
+    model = openai_compatible.OpenAICompatibleModel(model="local-model")
+
+    await model.predict("Review this answer.")
+
+    assert "max_tokens" not in latest_client().completions.calls[0]
+
+
+@pytest.mark.parametrize("bad", [None, 0, -3, True, 1.5, "512"])
+async def test_predict_rejects_invalid_per_call_max_tokens_before_transport(
+    bad: Any,
+) -> None:
+    model = openai_compatible.OpenAICompatibleModel(model="local-model")
+
+    with pytest.raises(ValueError, match="max_tokens"):
+        await model.predict("Review this answer.", max_tokens=bad)
+
+    assert latest_client().completions.calls == []
+
+
+async def test_predict_rejects_misspelled_option_before_transport() -> None:
+    model = openai_compatible.OpenAICompatibleModel(model="local-model")
+
+    with pytest.raises(
+        TypeError,
+        match=r"^OpenAICompatibleModel received unsupported call-time option\(s\): max_token$",
+    ):
+        await model.predict("Review this answer.", max_token=512)
+
+    assert latest_client().completions.calls == []
+
+
+async def test_predict_lists_unsupported_options_deterministically() -> None:
+    model = openai_compatible.OpenAICompatibleModel(model="local-model")
+
+    with pytest.raises(TypeError) as exc_info:
+        await model.predict(
+            "Review this answer.",
+            system="Ignore the configured prompt.",
+            model="other-model",
+            messages=[],
+        )
+
+    assert str(exc_info.value) == (
+        "OpenAICompatibleModel received unsupported call-time option(s): "
+        "messages, model, system"
+    )
+    assert latest_client().completions.calls == []
+
+
 async def test_predict_preserves_raw_user_message_without_context() -> None:
     model = openai_compatible.OpenAICompatibleModel(model="local-model")
 

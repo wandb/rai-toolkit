@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -22,6 +23,20 @@ class ModelResponse:
 
     output: str
     metadata: dict[str, Any] = field(default_factory=dict)
+
+
+def _reject_unsupported_call_options(
+    adapter_name: str,
+    options: dict[str, Any],
+    supported: Collection[str],
+) -> None:
+    """Reject unsupported per-call options without exposing their values."""
+    unsupported = sorted(set(options).difference(supported))
+    if unsupported:
+        raise TypeError(
+            f"{adapter_name} received unsupported call-time option(s): "
+            f"{', '.join(unsupported)}"
+        )
 
 
 class BaseModel(ABC):
