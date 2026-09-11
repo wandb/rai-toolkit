@@ -495,6 +495,69 @@ def test_overridden_patterns_are_actually_used() -> None:
     scorer._call_judge.assert_called_once()
 
 
+
+class _AngleScorer(CitationCorrectnessScorer):
+    """Configured for a different label syntax, as the class docs allow."""
+
+    citation_pattern = re.compile(r"<<[ \t]*([A-Za-z0-9][A-Za-z0-9._\-]*)[ \t]*>>")
+    source_label_pattern = re.compile(
+        r"^<<([A-Za-z0-9][A-Za-z0-9._\-]*)[ \t]*>>(?=\s|$)", re.MULTILINE
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "context"),
+    [
+        ("dup", "<<dup>> one\n\n<<dup>> two\n\n<<keep-this>> Real text here."),
+        ("empty", "<<empty>>\n\n<<keep-this>> Real text here."),
+    ],
+    ids=["duplicate", "empty_block"],
+)
+def test_a_dropped_label_is_ambiguous_under_a_custom_pattern(
+    label: str, context: str
+) -> None:
+    # The rejected-label lookup read the default syntax whatever the scorer was
+    # configured with, so a context declaring <<source-id>> had nothing
+    # rejected and a citation naming a duplicated or empty label passed
+    # unverified. The guarantee has to hold for an overridden pattern too.
+    output = f"Claim <<{label}>>. Other <<keep-this>>."
+    scorer = _AngleScorer(api_key="test")
+    scorer._call_judge = Mock(return_value={})
+
+    result = scorer.score(output, context=context)
+
+    assert not result.assessed
+    assert result.details["skipped"] == "partial_citation_coverage"
+    assert result.details["ambiguous_citations"] == [label]
+    assert scorer._call_judge.call_count == 0
+
+
+def test_a_custom_pattern_still_scores_a_clean_row() -> None:
+    # The control: the fix must not make every custom-syntax row un-assessed.
+    scorer = _AngleScorer(api_key="test")
+    scorer._call_judge = Mock(
+        return_value={
+            "score": 3,
+            "explanation": "ok",
+            "verdicts": [
+                {
+                    "occurrence": 1,
+                    "outcome": "supported",
+                    "claim_span": "Other",
+                    "context_span": "Real text here.",
+                }
+            ],
+        }
+    )
+
+    result = scorer.score(
+        "Other <<keep-this>>.", context="<<keep-this>> Real text here."
+    )
+
+    assert result.assessed
+    assert result.passed
+
+
 # --- coverage-gap reporting ------------------------------------------------
 # These pass the scorer's own ScorerResult to the assessor rather than a
 # hand-built one, so the two files stay in step: renaming a `skipped` value in
@@ -2172,6 +2235,81 @@ def test_code_like_prose_does_not_swallow_a_real_citation(prose: str) -> None:
     citations = _extract_citations(output)
 
     assert [c.marker for c in citations] == ["adverse-action"]
+
+
+# CommonMark closes a fence on a run of the same character that is *at least*
+# as long as the opener, not exactly as long. Reading only an equal run left the
+# block looking unclosed, so the mask ran to the end of the response and hid
+# every citation after it - passing a row that should have failed.
+LONGER_CLOSERS = {
+    "backtick_3_then_4": "\n```\ncode\n````\n",
+    "backtick_3_then_6": "\n```\ncode\n``````\n",
+    "backtick_4_then_5": "\n````\ncode\n`````\n",
+    "tilde_3_then_5": "\n~~~\ncode\n~~~~~\n",
+    "tilde_3_then_4": "\n~~~\ncode\n~~~~\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(LONGER_CLOSERS), ids=sorted(LONGER_CLOSERS))
+def test_a_longer_closing_fence_ends_the_block(form: str) -> None:
+    output = f"Valid [adverse-action].{LONGER_CLOSERS[form]}\nLater [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize("form", sorted(LONGER_CLOSERS), ids=sorted(LONGER_CLOSERS))
+def test_a_citation_after_a_longer_closer_is_not_hidden(form: str) -> None:
+    # The cost of missing the closer was a full pass on an unsupported citation.
+    output = f"Valid [adverse-action].{LONGER_CLOSERS[form]}\nLater [reg-z-2024]."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+def test_a_shorter_run_does_not_close_a_longer_fence() -> None:
+    # The rule is "at least as long", so the comparison has to hold both ways.
+    output = "Valid [adverse-action].\n````\ncode\n```\nstill code [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+# A code span may cross a line ending. Refusing to span lines left a marker
+# inside a legitimate span parsed as a citation, failing a valid response.
+MULTILINE_SPANS = {
+    "single_backtick": "`lookup\n[reg-z-2024]`",
+    "double_backtick": "``lookup\n[reg-z-2024]``",
+    "triple_backtick": "```a\n[reg-z-2024]\nb```",
+    "several_lines": "`a\nb\nc\n[reg-z-2024]`",
+}
+
+
+@pytest.mark.parametrize("form", sorted(MULTILINE_SPANS), ids=sorted(MULTILINE_SPANS))
+def test_a_marker_inside_a_multiline_code_span_is_not_a_citation(form: str) -> None:
+    output = f"Notices are required [adverse-action]. {MULTILINE_SPANS[form]} done."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+@pytest.mark.parametrize("form", sorted(MULTILINE_SPANS), ids=sorted(MULTILINE_SPANS))
+def test_a_multiline_code_span_does_not_fail_a_valid_response(form: str) -> None:
+    output = f"Notices are required [adverse-action]. {MULTILINE_SPANS[form]} done."
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+    assert result.details["fabricated_citations"] == []
 
 
 def test_a_fence_opened_mid_line_is_still_code_when_it_closes() -> None:
