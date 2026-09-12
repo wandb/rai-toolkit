@@ -2141,9 +2141,9 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
             continue
 
         indent = _indent_width(body)
-        # A line shallower than the open item leaves it, and any item it was
-        # nested in. Only a line that is not itself indented code can do so.
-        while containers and indent < containers[-1] and indent < containers[-1] + 4:
+        # A line shallower than the open item has left it, and any item that
+        # one was nested in.
+        while containers and indent < containers[-1]:
             containers.pop()
         content_column = containers[-1] if containers else 0
 
@@ -2210,42 +2210,41 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
         # This is the one place the masking deliberately differs from a
         # renderer's idea of what is code.
         block_start = start = offsets[index]
+        # The block cannot outlive its container: the first line shallower
+        # than the item's content column has left it, and the fence ends there
+        # whether or not a closer appears later in the response.
+        limit = len(lines)
+        if content_column:
+            for probe in range(index + 1, len(lines)):
+                candidate = _line_body(lines[probe])
+                if candidate.strip() and _indent_width(candidate) < content_column:
+                    limit = probe
+                    break
+
         closed_at = None
-        probe = index + 1
-        while probe < len(lines):
+        for probe in range(index + 1, limit):
             closer = _FENCE_CLOSE.match(_line_body(lines[probe]))
             if (
                 closer is not None
                 and closer.group("fence")[0] == fence[0]
                 and len(closer.group("fence")) >= len(fence)
-                # A closer carries at most three leading spaces, the same bound
-                # as an opener. A deeper one is indented content, so the block
-                # stays open and the text after it is still code.
-                and len(closer.group("indent").expandtabs(4)) <= 3
+                # A closer carries at most three columns past its container,
+                # the same bound as an opener. A deeper one is indented
+                # content, so the block stays open.
+                and _indent_width(_line_body(lines[probe])) - content_column <= 3
             ):
                 closed_at = probe
                 break
-            probe += 1
 
         if closed_at is None:
             # A reply truncated mid-block leaves one open, and the code before
-            # the cut is still code. Inside a list item the block ends with the
-            # item rather than with the response: the first line shallower than
-            # the item's content column has left it.
-            end_index = len(lines)
-            if content_column:
-                for probe in range(index + 1, len(lines)):
-                    candidate = _line_body(lines[probe])
-                    if candidate.strip() and _indent_width(candidate) < content_column:
-                        end_index = probe
-                        break
-            if end_index >= len(lines):
+            # the cut is still code.
+            if limit >= len(lines):
                 spans.append((block_start, start, len(text)))
                 break
-            spans.append((block_start, start, offsets[end_index]))
+            spans.append((block_start, start, offsets[limit]))
             paragraph_open = False
-            containers.clear()
-            index = end_index
+            index = limit
             continue
 
         spans.append((block_start, start, offsets[closed_at] + len(lines[closed_at])))

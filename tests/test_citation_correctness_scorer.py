@@ -2489,6 +2489,37 @@ def test_a_fence_inside_a_list_item_is_measured_from_the_item() -> None:
     assert [c.marker for c in citations] == ["adverse-action"]
 
 
+@pytest.mark.parametrize(
+    ("indent", "masked"),
+    [("  ", False), ("   ", False), ("     ", False), ("      ", True)],
+    ids=["plus_zero", "plus_one", "plus_three", "plus_four"],
+)
+def test_a_closer_is_measured_from_the_item_too(indent: str, masked: bool) -> None:
+    # The closer carries the same three-column allowance as the opener, counted
+    # from the item's content column. Up to three past it closes the block, so
+    # the text after is the item's prose; four past it does not, so the block
+    # stays open. Measuring from column zero rejected a legitimate closer and
+    # masked the citation that followed.
+    output = (
+        "- Notices are required [adverse-action].\n  ```\n  code\n"
+        f"{indent}```\n  Rates [reg-z-2024]"
+    )
+
+    citations = _extract_citations(output)
+
+    assert ("reg-z-2024" not in [c.marker for c in citations]) is masked
+
+
+def test_a_fence_ends_where_its_item_ends_even_with_a_later_closer() -> None:
+    # The block cannot outlive its container. A closer further down the
+    # response does not reach back into an item the text has already left.
+    output = "- Notices are required [adverse-action].\n   ```\nRates [reg-z-2024]\n```"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
 def test_an_unclosed_fence_in_a_list_ends_with_the_item() -> None:
     # It runs to the end of its container, not the end of the response.
     output = "- Notices are required [adverse-action].\n   ```\nRates [reg-z-2024]"
