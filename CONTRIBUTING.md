@@ -46,7 +46,13 @@ local validation are complete.
 - AI-assisted contributions are fine. Say so in the pull request description,
   and be ready to explain and rework any line when asked.
 
+## Scorer contributions
+
+When adding a scorer, follow the [scorer-authoring guide](docs/scorer_authoring.md)
+for the result contract, unassessed rows, evidence validation, and offline tests.
+
 ## License headers
+
 <!--- REUSE-IgnoreStart -->
 
 Every source file carries an SPDX header reflecting:

@@ -2,7 +2,43 @@
 
 A model adapter is the seam between the toolkit and whatever system actually answers a prompt. Everything downstream — evaluation, red-teaming, guardrails, the assessment report — talks to a `BaseModel` and never to a provider SDK. That only holds if every adapter behaves the same way, so this page is the contract adapters are held to.
 
-The contract has an executable form: `tests/model_adapter_contract.py`. An adapter is not finished until it passes that suite.
+The provider adapter contract has an executable form: `tests/model_adapter_contract.py`. A dedicated provider adapter is not finished until it passes that suite.
+
+The provider request, channel, and standard metadata requirements below describe
+dedicated provider adapters, including `OpenAICompatibleModel` and
+`AnthropicModel`. `CallableModel` is a forwarding wrapper with the narrower
+contract described next; it cannot enforce what an arbitrary function sends to
+its provider.
+
+## Wrapping a callable
+
+`CallableModel` invokes `predict_fn(input_text, context=context, **kwargs)` with
+the caller's values unchanged. It awaits coroutine functions, runs synchronous
+functions on a worker thread, and awaits an awaitable returned by a synchronous
+function. Exceptions propagate. The function must return a string or a
+`ModelResponse`; other return types raise `TypeError`.
+
+The wrapper does not serialize retrieved context, append a context handling
+policy, choose message roles, or validate provider-specific options. The wrapped
+function is responsible for those choices and for delivering context to the
+model. If it uses retrieved context, keep that data out of system instructions
+and other privileged channels. Test the actual provider request constructed by
+the function, including poisoned context and empty-context behavior. The
+provider adapter conformance suite does not establish those properties for an
+arbitrary callable.
+
+Document the callable's prompt construction, context handling, model settings,
+and retrieval configuration alongside its assessment results. An injection test
+of that callable measures the complete implementation, including its choice of
+trust boundaries. It is not an adapter-only comparison with the built-ins unless
+the relevant request construction and assessment conditions are aligned.
+
+A returned `ModelResponse` is preserved, including its metadata. A returned
+string is wrapped with empty metadata; `CallableModel` does not synthesize the
+six provider metadata keys below. Populate them in your function when known. If
+the function retrieves its own context, return the actual context used under
+`metadata["retrieved_context"]` so evaluation can use it instead of the dataset's
+context hint.
 
 ## When you need a dedicated adapter
 
@@ -89,7 +125,7 @@ This structure is defense in depth, not a guarantee. It removes one specific and
 
 ## Standard metadata keys
 
-Every adapter populates these six keys on `ModelResponse.metadata`:
+Every dedicated provider adapter populates these six keys on `ModelResponse.metadata`:
 
 | Key | Meaning |
 | --- | --- |
