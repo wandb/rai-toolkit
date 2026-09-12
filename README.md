@@ -384,6 +384,18 @@ boundary, but does not by itself prevent prompt injection.
 an internal SDK, or a proprietary endpoint can be assessed without writing a
 `BaseModel` subclass or adding a provider dependency.
 
+`CallableModel` passes `input_text`, `context`, and call-time options to your
+function unchanged. It does not build a provider request, choose message roles,
+or add the built-in adapters' context handling policy. Your function owns that
+boundary: keep retrieved context out of system instructions and other privileged
+channels, and pass it as separate, lower-trust data. Record how the function
+constructs its prompt before comparing injection-resistance results with a
+built-in adapter; wrapping a function does not establish equivalent prompt
+handling. See the [callable contract](docs/model_adapters.md#wrapping-a-callable).
+
+The examples below demonstrate return types and do not use `context`. For a RAG
+assessment, adapt the function to supply the retrieved context to its model.
+
 ```python
 import asyncio
 
@@ -490,7 +502,8 @@ a domain without forking scorer code.
 
 Available judge scorers include `FactualityJudge`, `FairnessJudge`,
 `ContentSafetyJudge`, `PrivacyJudge`, `SecurityJudge`, `TransparencyJudge`,
-`ExplainabilityJudge`, `RubricScorer`, and `GroundednessScorer`. The
+`ExplainabilityJudge`, `RubricScorer`, `GroundednessScorer`,
+`RetrievalRelevanceScorer`, `ContextPrecisionScorer`, and `ContextRecallScorer`. The
 `GroundednessScorer` evaluates RAG responses only when retrieved context is
 present and retains verified supporting or contradicting spans as evidence.
 The `RetrievalRelevanceScorer` grades retrieval quality itself: it validates
@@ -502,6 +515,10 @@ chunk by chunk: precision reports the fraction of retrieved chunks the query
 actually needed, and recall reports how much of the row's reference answer the
 retrieval supplied. Both derive their score from validated verdicts, so a
 judge that cannot be trusted leaves the row un-assessed instead of scoring it.
+
+For custom scorers, see the [scorer-authoring guide](docs/scorer_authoring.md),
+including result semantics, verified evidence, retrieval-score denominators,
+and offline validation.
 
 ## Weave-native evaluation in assessment
 
@@ -612,6 +629,16 @@ PRs welcome. New here? Check the [good first issue](https://github.com/wandb/rai
 - More red-team attack templates (with responsible disclosure)
 - Stronger LLM-judge coverage and prompts under `rai_toolkit/prompts`
 - Additional industry presets beyond the bundled healthcare / finance / government / HR set
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow and the
+[scorer-authoring guide](docs/scorer_authoring.md) for custom evaluation work.
+
+## Acknowledgments
+
+The toolkit includes community contributions to model adapters, scorers,
+industry presets, red-team templates, tests, and documentation. See
+[CONTRIBUTORS.md](CONTRIBUTORS.md) for contributor handles and links to merged
+work, and the [full contributor history](https://github.com/wandb/rai-toolkit/graphs/contributors).
 
 
 ## License
