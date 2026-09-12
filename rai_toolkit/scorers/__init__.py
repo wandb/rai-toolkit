@@ -8,6 +8,8 @@ from rai_toolkit.scorers.base import BaseScorer, ScorerResult
 from rai_toolkit.scorers.composite import CompositeScorer
 from rai_toolkit.scorers.llm_judges import (
     ContentSafetyJudge,
+    ContextPrecisionScorer,
+    ContextRecallScorer,
     ExplainabilityJudge,
     FactualityJudge,
     FairnessJudge,
@@ -31,6 +33,8 @@ __all__ = [
     "BaseScorer",
     "CompositeScorer",
     "ContentSafetyJudge",
+    "ContextPrecisionScorer",
+    "ContextRecallScorer",
     "ExplainabilityJudge",
     "FactualityJudge",
     "FairnessJudge",

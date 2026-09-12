@@ -519,6 +519,125 @@ def _render_context_chunks(chunks: list[str]) -> str:
     )
 
 
+def _xml_unescape_prompt_text(text: str) -> str:
+    """Reverse ``_escape_chunk_content`` on a span the judge quoted back.
+
+    The judge reads XML-escaped chunk content, so its quotes can arrive in
+    escaped form (``R&amp;D`` for ``R&D``). Verification must happen against
+    the original chunk text, so the quote is unescaped first. The order is
+    the reverse of escaping: entities for ``<`` and ``>`` are resolved before
+    ``&amp;``, so a chunk that legitimately contained ``&amp;`` round-trips
+    (shown as ``&amp;amp;``, quoted back, unescaped once to ``&amp;``).
+    """
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+
+
+_ENVELOPE_MARKER_PATTERN = re.compile(r"</?chunk\b[^>]*>")
+
+
+def _is_envelope_or_label_only(span: str, chunk: str) -> bool:
+    """Return True when a quoted span carries no chunk content, only syntax.
+
+    A ``<chunk index="N">`` envelope marker is prompt scaffolding, and the
+    matched chunk's own leading ``[source-id]`` label names the source rather
+    than stating anything, so a span made up solely of such markers -- or of
+    whitespace around them -- verifies nothing. Bracketed text that is not
+    that label (``[FDA]`` in the chunk body) is chunk content and survives
+    this check.
+    """
+    residue = _ENVELOPE_MARKER_PATTERN.sub("", span)
+    label_match = _SOURCE_LABEL_PATTERN.match(chunk)
+    if label_match:
+        residue = residue.replace(label_match.group(0), "")
+    return not residue.strip()
+
+
+def _context_span_in_chunks(span: str, chunks: list[str]) -> tuple[str, str]:
+    """Verify a quoted span against the original chunk content, not the prompt.
+
+    Returns ``(verified_span, matched_chunk)`` -- the span verbatim as it
+    appears in the matching original chunk, and that chunk so the caller can
+    tell scaffolding from the chunk's own label -- or ``("", "")`` when no
+    chunk contains it. Matching against a single original chunk (rather than
+    the rendered envelope sequence) keeps evidence anchored to what was
+    actually retrieved and cannot be satisfied by envelope syntax.
+    """
+    for chunk in chunks:
+        verified = _verbatim_span(span, chunk)
+        if verified:
+            return verified, chunk
+    return "", ""
+
+
+def _normalized_occurrences(span: str, normalized_row: str) -> list[tuple[int, int]]:
+    """All (start, end) occurrences of a span in the normalized row text.
+
+    Coordinates refer to the whitespace-collapsed, quote-normalized text
+    produced by ``_normalized_text_with_offsets``.
+    """
+    normalized_span, _ = _normalized_text_with_offsets(span)
+    if not normalized_span:
+        return []
+    occurrences: list[tuple[int, int]] = []
+    start = normalized_row.find(normalized_span)
+    while start >= 0:
+        occurrences.append((start, start + len(normalized_span)))
+        start = normalized_row.find(normalized_span, start + 1)
+    return occurrences
+
+
+def _check_reference_decomposition(
+    bound_pieces: list[tuple[str, int, int]], expected: str
+) -> tuple[list[str], list[str]]:
+    """Check that bound reference pieces tile the whole reference answer.
+
+    Each piece arrives as ``(span, start, end)`` with its interval already
+    bound to one occurrence of the span in the normalized reference text (see
+    the recall scorer), so this function never re-derives occurrences: one
+    item covers exactly the occurrence it was bound to, never every repeated
+    occurrence at once.
+
+    Returns ``(overlapping_spans, uncovered_texts)``; both empty means the
+    pieces form a complete, non-overlapping decomposition: every part of the
+    reference is covered by exactly one bound piece. Whitespace between pieces
+    does not break completeness. Anything else is a judge that trimmed the
+    denominator (omitted pieces) or listed the same text twice under
+    overlapping spans -- either way the recall score would be inflated, so
+    the caller fails the parse.
+    """
+    normalized_expected, offsets = _normalized_text_with_offsets(expected)
+    intervals: list[tuple[int, int, str]] = [
+        (start, end, span) for span, start, end in bound_pieces
+    ]
+    intervals.sort()
+
+    overlapping: set[str] = set()
+    active_end = -1
+    active_span = ""
+    for start, end, span in intervals:
+        # Intervals are sorted by start, so an active interval that reaches
+        # past the current start genuinely overlaps it.
+        if active_span and start < active_end:
+            overlapping.add(active_span)
+            overlapping.add(span)
+        if end > active_end:
+            active_end, active_span = end, span
+
+    uncovered: list[str] = []
+    covered_end = 0
+    for start, end, _ in intervals:
+        if start > covered_end:
+            gap = normalized_expected[covered_end:start]
+            if gap.strip():
+                uncovered.append(expected[offsets[covered_end] : offsets[start]])
+        covered_end = max(covered_end, end)
+    if covered_end < len(normalized_expected):
+        gap = normalized_expected[covered_end:]
+        if gap.strip():
+            uncovered.append(expected[offsets[covered_end] : offsets[-1]])
+    return sorted(overlapping), uncovered
+
+
 class RetrievalRelevanceScorer(LLMJudgeScorer):
     """Judge whether each retrieved context chunk is relevant to the user query.
 
@@ -818,6 +937,724 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 "relevant_chunks": relevant_count,
                 "total_chunks": len(chunks),
                 "discarded_verdicts": discarded_verdicts,
+                "judge_score": judge_score,
+                "judge_explanation": str(result.get("explanation", "")),
+            },
+        )
+
+
+def _advisory_judge_score(raw_score: Any) -> float | None:
+    """Parse the judge's own overall score as an advisory audit value.
+
+    The scorers below always derive their score from validated verdicts; the
+    judge's own number is recorded in ``details["judge_score"]`` only. A bool is
+    rejected rather than coerced (``float(True)`` is 1.0 and a boolean is not a
+    score), and an unparseable or non-finite value becomes ``None``.
+    """
+    if isinstance(raw_score, bool):
+        return None
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return None
+    return score if math.isfinite(score) else None
+
+
+class ContextPrecisionScorer(LLMJudgeScorer):
+    """Measure the fraction of retrieved chunks the query actually needed.
+
+    Precision is a set-level measurement, not a per-chunk grade: it answers "of
+    the chunks that were retrieved, how many were actually needed to answer the
+    query", so a retriever that pads the context window with redundant or
+    off-topic chunks scores low even when every chunk is individually on topic.
+    That is the difference from ``RetrievalRelevanceScorer``, which grades each
+    chunk on its own and therefore cannot see redundancy across chunks.
+
+    Chunks follow the toolkit's context contract (see
+    ``_split_context_chunks``) and the judge reads them re-rendered into
+    numbered ``<chunk index="N">`` envelopes. The judge returns a binary
+    ``needed`` / ``not_needed`` verdict per chunk, and the scorer derives the
+    score as ``needed / total`` from the validated verdicts. The judge's own
+    overall score is advisory and recorded in ``details["judge_score"]``.
+
+    When two chunks carry the same information, "another chunk supplies it"
+    would otherwise apply symmetrically to both copies. The prompt fixes the
+    tie-break deterministically: the lowest-index chunk supplying the
+    information is the needed one, and every later chunk repeating it is not
+    needed, so identical chunks cannot both be marked needed. Exact
+    duplicates are mechanically decidable, so the scorer enforces that rule
+    itself: within a group of identical chunks, if any copy is marked needed
+    the lowest-index copy is the one that supplies the information -- a later
+    copy marked needed is demoted to ``not_needed``, and a lowest-index copy
+    marked ``not_needed`` while a later copy is needed is promoted to
+    ``needed`` -- and every correction is recorded in
+    ``details["duplicate_chunk_corrections"]``. A group no copy is needed in
+    stays as judged: the information being supplied twice does not make it
+    needed once. Chunks are grouped by their passage content without the
+    leading ``[source-id]`` label, so the same passage retrieved under two
+    source IDs still groups as duplicates.
+
+    Verdicts that are not dicts, carry a non-integer ``chunk_index``, or an
+    unrecognized label are discarded and reported in
+    ``details["discarded_verdicts"]``. A duplicated or out-of-range
+    ``chunk_index``, or a real chunk with no verdict, fails the parse (the
+    per-chunk grading would be ambiguous) and the row is returned un-assessed
+    with ``skipped="judge_parse_failure"``.
+
+    Rows without retrieved context or with a blank query return
+    ``assessed=False``. Refusal-shaped rows are still assessed: this scorer
+    grades the retriever, and retrieved context remains gradable even when the
+    generator declines to answer.
+    """
+
+    name = "ContextPrecisionScorer"
+    description = (
+        "Measures the fraction of retrieved context chunks the query actually needed"
+    )
+    category = "MIT-3.1"
+    _judge_name = "ContextPrecisionScorer"
+
+    def score(
+        self,
+        output: str,
+        input: str = "",
+        context: str = "",
+        **kwargs: Any,
+    ) -> ScorerResult:
+        # Chunk count comes from the context, never from the judge's verdict
+        # list: the scorer and the judge must agree on what was retrieved.
+        chunks = _split_context_chunks(context)
+        if not chunks:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no retrieved context is available. "
+                    "ContextPrecisionScorer measures how much of the retrieved "
+                    "set was needed; without context there is nothing to assess."
+                ),
+                details={
+                    "skipped": "empty_context",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+        if not (input or "").strip():
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no user query available. Context precision "
+                    "asks whether chunks were needed to answer the query; with "
+                    "a blank query there is nothing for a chunk to be needed for."
+                ),
+                details={
+                    "skipped": "empty_query",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+
+        prompts = self._get_prompts()
+        # Rebuild the prompt from the exact parsed chunk sequence so the judge's
+        # indexes line up with the chunks the scorer counts.
+        parsed_context = _render_context_chunks(chunks)
+        user_prompt = self._format_prompt(
+            output=output, input=input, context=parsed_context
+        )
+        result = self._call_judge(prompts["system"], user_prompt)
+        if not isinstance(result, dict):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge reply was valid JSON but not an "
+                    "object, so it carries no per-chunk verdicts. Inspect "
+                    "details.judge_response to see what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                },
+                assessed=False,
+            )
+
+        judge_score = _advisory_judge_score(result.get("score"))
+
+        recognized_labels = ("needed", "not_needed")
+        valid_verdicts: dict[int, dict[str, Any]] = {}
+        seen_indexes: set[int] = set()
+        duplicate_indexes: list[int] = []
+        out_of_range_indexes: list[int] = []
+        discarded_verdicts = 0
+        raw_verdicts = result.get("chunk_verdicts")
+        if isinstance(raw_verdicts, list):
+            for verdict in raw_verdicts:
+                if not isinstance(verdict, dict):
+                    discarded_verdicts += 1
+                    continue
+                raw_index = verdict.get("chunk_index")
+                if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+                    discarded_verdicts += 1
+                    continue
+                index = raw_index
+                if not 0 <= index < len(chunks):
+                    out_of_range_indexes.append(index)
+                    continue
+                if index in seen_indexes:
+                    duplicate_indexes.append(index)
+                    discarded_verdicts += 1
+                    continue
+                seen_indexes.add(index)
+                if verdict.get("needed") not in recognized_labels:
+                    discarded_verdicts += 1
+                    continue
+                valid_verdicts[index] = verdict
+
+        if duplicate_indexes or out_of_range_indexes:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge returned a verdict for a chunk "
+                    "outside the parsed range or more than one verdict for the "
+                    "same chunk. Either makes the per-chunk grading ambiguous; "
+                    "inspect details.judge_response to see what the judge "
+                    "returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "covered_chunks": len(valid_verdicts),
+                    "duplicate_chunk_indexes": sorted(set(duplicate_indexes)),
+                    "out_of_range_chunk_indexes": sorted(set(out_of_range_indexes)),
+                    "discarded_verdicts": discarded_verdicts,
+                },
+                assessed=False,
+            )
+
+        missing_indexes = sorted(set(range(len(chunks))) - set(valid_verdicts))
+        if missing_indexes:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge did not return a parseable verdict "
+                    "for every chunk. Inspect details.judge_response to see "
+                    "what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "covered_chunks": len(valid_verdicts),
+                    "missing_chunk_indexes": missing_indexes,
+                    "discarded_verdicts": discarded_verdicts,
+                },
+                assessed=False,
+            )
+
+        # Exact duplicates are mechanically decidable, so the prompt's
+        # lowest-index rule is enforced here rather than trusted to the judge:
+        # within a group of chunks with identical content, if any copy is
+        # marked needed the lowest-index copy is the one that supplies the
+        # information. A later copy marked needed is demoted, and a
+        # lowest-index copy marked not_needed while a later copy is needed is
+        # promoted, so the contradiction resolves to the documented rule in
+        # both verdict directions; every correction is recorded. Without this,
+        # a judge marking both copies of a duplicated chunk needed would score
+        # perfect precision, and marking the first copy not_needed with a
+        # later copy needed would zero the score instead of letting the
+        # lowest-index copy supply the information. Chunks are grouped by
+        # passage content without the leading source label, so identical
+        # passages under different source IDs still group as duplicates, and
+        # whitespace is collapsed, so delimiter padding around a ``---``
+        # fallback chunk does not hide the duplication either.
+        content_groups: dict[str, list[int]] = {}
+        for index in range(len(chunks)):
+            leading_label = _SOURCE_LABEL_PATTERN.match(chunks[index])
+            passage_start = leading_label.end() if leading_label else 0
+            normalized_chunk = _normalized_text_with_offsets(
+                chunks[index][passage_start:]
+            )[0].strip()
+            content_groups.setdefault(normalized_chunk, []).append(index)
+        needed_by_index: dict[int, str] = {
+            index: str(valid_verdicts[index].get("needed"))
+            for index in valid_verdicts
+        }
+        duplicate_chunk_corrections: list[dict[str, Any]] = []
+        for indexes in content_groups.values():
+            if all(needed_by_index[index] == "not_needed" for index in indexes):
+                continue
+            for position, index in enumerate(indexes):
+                documented_label = "needed" if position == 0 else "not_needed"
+                if needed_by_index[index] == documented_label:
+                    continue
+                needed_by_index[index] = documented_label
+                duplicate_chunk_corrections.append(
+                    {
+                        "chunk_index": index,
+                        "duplicate_of": indexes[0],
+                        "reason": (
+                            "Exact duplicate of chunk "
+                            f"{indexes[0]}; the lowest-index chunk "
+                            "supplies the information."
+                        )
+                        if position > 0
+                        else (
+                            "Lowest-index copy of an exact-duplicate group; "
+                            "the lowest-index chunk supplies the information."
+                        ),
+                    }
+                )
+
+        needed_count = sum(1 for label in needed_by_index.values() if label == "needed")
+        precision = needed_count / len(chunks)
+        chunk_verdicts = [
+            {
+                "chunk_index": index,
+                "needed": needed_by_index[index],
+                "reason": str(valid_verdicts[index].get("reason", "")),
+            }
+            for index in sorted(valid_verdicts)
+        ]
+        explanation = (
+            f"{needed_count} of {len(chunks)} retrieved chunk(s) needed; "
+            f"precision {precision:.2f}, threshold {self.threshold}."
+        )
+
+        return ScorerResult(
+            score=precision,
+            passed=ScoreNormalizer.apply_threshold(precision, self.threshold),
+            category=self.category,
+            explanation=explanation,
+            details={
+                "scorer_name": self.name,
+                "raw_score": precision,
+                "max_score": 1,
+                "judge_model": self.model,
+                "chunk_verdicts": chunk_verdicts,
+                "needed_chunks": needed_count,
+                "total_chunks": len(chunks),
+                "duplicate_chunk_corrections": duplicate_chunk_corrections,
+                "discarded_verdicts": discarded_verdicts,
+                "judge_score": judge_score,
+                "judge_explanation": str(result.get("explanation", "")),
+            },
+        )
+
+
+class ContextRecallScorer(LLMJudgeScorer):
+    """Measure how much of the reference answer the retrieved context supplied.
+
+    Recall is a set-level measurement: it answers "of the information needed to
+    answer the query, how much did the retrieval actually supply", so a
+    retriever that misses the one chunk that mattered scores low even when every
+    chunk it did return is relevant. That is the difference from
+    ``RetrievalRelevanceScorer``, which can only grade what was retrieved and is
+    blind to a chunk that was never returned at all.
+
+    The judge decomposes the row's reference answer (``expected``) into
+    individual pieces of information, each anchored to a verbatim span of the
+    reference, and marks each piece with a boolean ``supported`` flag and a
+    verbatim context span as evidence. The scorer validates those anchors:
+
+    - A piece whose reference span is not verbatim in ``expected`` is discarded,
+      so a judge cannot invent information the reference does not contain.
+    - A piece whose ``supported`` flag is not a boolean is discarded.
+    - A ``supported`` piece is verified against the original chunk content,
+      not the XML-escaped envelope view the judge read: the quoted span is
+      unescaped and matched back to a retrieved chunk, and the span stored in
+      the result is the original chunk text. A span that only repeats the
+      envelope marker or the chunk's source label is not evidence, and a
+      support claim that cannot be verified this way is counted as not
+      supported rather than trusted.
+    - Each piece is bound to exactly one occurrence of its reference span: the
+      earliest occurrence no earlier piece has claimed. A span the reference
+      repeats must be listed once per occurrence -- one piece can never cover
+      every repeated occurrence -- and a listing with no unclaimed occurrence
+      left fails the parse, since the same information listed twice would
+      double-count in the denominator.
+    - The surviving pieces must form a complete, non-overlapping decomposition
+      of the reference: overlapping spans, or reference text no piece covers,
+      fail the parse. A judge could otherwise shrink the denominator by
+      omitting the pieces the retrieval missed -- a two-fact reference where
+      only the supported fact is listed would score a perfect recall.
+
+    The score is the share of the reference text the retrieval supplied:
+    supported stretch length over total stretch length, measured on the
+    whitespace-collapsed reference the pieces are bound to. Adjacent pieces
+    sharing a verdict are merged into maximal stretches first, so splitting
+    or merging equivalent pieces leaves the stretches -- and the measured
+    lengths -- unchanged, and weighing the stretches by length is what makes
+    recall fall as more distinct reference information goes unsupplied,
+    where a count of same-verdict runs would freeze at 0.5 no matter how
+    many facts the retrieval missed. Gaps between opposite-verdict stretches
+    stay outside both, so the denominator is the stretches' own total
+    length, not the whole reference. The judge's own overall score is
+    advisory and recorded in ``details["judge_score"]``. A reply that yields
+    no valid piece is a parse failure rather than a perfect or empty score.
+
+    Rows without retrieved context, with a blank query, or without a reference
+    answer return ``assessed=False`` (``skipped`` is ``empty_context`` /
+    ``empty_query`` / ``missing_reference``): recall needs a reference to
+    measure against, and an absent one is a coverage gap, not a zero. Refusal-
+    shaped rows are still assessed: this scorer grades the retriever.
+    """
+
+    name = "ContextRecallScorer"
+    description = (
+        "Measures how much of the reference answer the retrieved context supplied"
+    )
+    category = "MIT-3.1"
+    _judge_name = "ContextRecallScorer"
+
+    def score(
+        self,
+        output: str,
+        input: str = "",
+        context: str = "",
+        **kwargs: Any,
+    ) -> ScorerResult:
+        expected = str(kwargs.get("expected") or "")
+        chunks = _split_context_chunks(context)
+        if not chunks:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no retrieved context is available. "
+                    "ContextRecallScorer measures how much of the reference the "
+                    "retrieval supplied; without context there is nothing to "
+                    "assess."
+                ),
+                details={
+                    "skipped": "empty_context",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+        if not (input or "").strip():
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no user query available. Context recall asks "
+                    "whether the retrieved chunks supply the information the "
+                    "query needs; with a blank query there is nothing to "
+                    "measure recall against."
+                ),
+                details={
+                    "skipped": "empty_query",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+        if not expected.strip():
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: no reference answer available on this row. "
+                    "Context recall measures the retrieved set against the "
+                    "information a correct answer needs; without a reference "
+                    "there is nothing to measure against. Add a reference "
+                    "answer or reference context to assess recall on this row."
+                ),
+                details={
+                    "skipped": "missing_reference",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                },
+                assessed=False,
+            )
+
+        prompts = self._get_prompts()
+        # The judge reads the same rendered chunk envelopes the scorer counts,
+        # and the reference answer verbatim: both anchors are checked against
+        # exactly what the judge was shown.
+        parsed_context = _render_context_chunks(chunks)
+        user_prompt = prompts["template"].format(
+            input=input,
+            context=parsed_context,
+            expected=expected,
+        )
+        result = self._call_judge(prompts["system"], user_prompt)
+        if not isinstance(result, dict):
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge reply was valid JSON but not an "
+                    "object, so it carries no reference items. Inspect "
+                    "details.judge_response to see what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                },
+                assessed=False,
+            )
+
+        judge_score = _advisory_judge_score(result.get("score"))
+
+        valid_items: list[dict[str, Any]] = []
+        item_intervals: list[tuple[int, int]] = []
+        bound_occurrences: set[tuple[int, int]] = set()
+        duplicate_spans: list[str] = []
+        discarded_items = 0
+        unverified_support_items = 0
+        normalized_expected, _expected_offsets = _normalized_text_with_offsets(expected)
+        raw_items = result.get("reference_items")
+        if isinstance(raw_items, list):
+            for item in raw_items:
+                if not isinstance(item, dict):
+                    discarded_items += 1
+                    continue
+                raw_reference_span = item.get("reference_span")
+                if not isinstance(raw_reference_span, str):
+                    discarded_items += 1
+                    continue
+                reference_span = _verbatim_span(raw_reference_span, expected)
+                if not reference_span:
+                    discarded_items += 1
+                    continue
+                # Each item is bound to exactly one occurrence of its span in
+                # the reference: the earliest occurrence no earlier item has
+                # claimed. A span the reference repeats must be listed once
+                # per occurrence -- one item can never cover every repeated
+                # occurrence, and a listing with no unclaimed occurrence left
+                # is a duplicate.
+                interval = next(
+                    (
+                        occurrence
+                        for occurrence in _normalized_occurrences(
+                            reference_span, normalized_expected
+                        )
+                        if occurrence not in bound_occurrences
+                    ),
+                    None,
+                )
+                if interval is None:
+                    duplicate_spans.append(reference_span)
+                    discarded_items += 1
+                    continue
+                supported = item.get("supported")
+                if not isinstance(supported, bool):
+                    discarded_items += 1
+                    continue
+                context_span = ""
+                if supported:
+                    raw_context_span = item.get("context_span")
+                    if isinstance(raw_context_span, str):
+                        # The judge quotes from the XML-escaped envelope view,
+                        # so the quote is unescaped and verified against the
+                        # original chunk content -- never against the rendered
+                        # prompt, where escaping artifacts and envelope syntax
+                        # would verify as false evidence. The stored span is
+                        # the original chunk text, not the escaped quote.
+                        unescaped_span = _xml_unescape_prompt_text(raw_context_span)
+                        context_span, matched_chunk = _context_span_in_chunks(
+                            unescaped_span, chunks
+                        )
+                        if context_span and _is_envelope_or_label_only(
+                            context_span, matched_chunk
+                        ):
+                            context_span = ""
+                    if not context_span:
+                        # The judge claims support but cannot show it in the
+                        # retrieved chunks. Downgrade rather than trust it.
+                        supported = False
+                        unverified_support_items += 1
+                valid_items.append(
+                    {
+                        "reference_span": reference_span,
+                        "supported": supported,
+                        "context_span": context_span,
+                        "reason": str(item.get("reason", "")),
+                    }
+                )
+                item_intervals.append(interval)
+                bound_occurrences.add(interval)
+
+        if duplicate_spans:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge listed a reference span more times "
+                    "than the reference contains it, which would double-count "
+                    "that piece of information in the recall denominator. "
+                    "Inspect details.judge_response to see what the judge "
+                    "returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "duplicate_reference_spans": sorted(set(duplicate_spans)),
+                    "discarded_items": discarded_items,
+                },
+                assessed=False,
+            )
+
+        if not valid_items:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge returned no reference piece that "
+                    "could be verified as verbatim text of the reference "
+                    "answer. Inspect details.judge_response to see what the "
+                    "judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "discarded_items": discarded_items,
+                },
+                assessed=False,
+            )
+
+        # The denominator must come from a complete, non-overlapping
+        # decomposition of the reference. A judge that omits the pieces the
+        # retrieval missed would otherwise shrink the denominator and score a
+        # partial retrieval as perfect (a two-fact reference where only the
+        # supported fact is listed scores 1.0), and overlapping spans would
+        # count the same reference text as separate pieces. Either way the
+        # denominator is not trustworthy, so the row is un-assessed.
+        overlapping_spans, uncovered_texts = _check_reference_decomposition(
+            [
+                (item["reference_span"], start, end)
+                for item, (start, end) in zip(valid_items, item_intervals)
+            ],
+            expected,
+        )
+        if overlapping_spans:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge's reference pieces overlap, so the "
+                    "same reference text would be counted more than once in "
+                    "the recall denominator. Inspect details.judge_response "
+                    "to see what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "overlapping_reference_spans": overlapping_spans,
+                    "discarded_items": discarded_items,
+                },
+                assessed=False,
+            )
+        if uncovered_texts:
+            return ScorerResult(
+                score=0.0,
+                passed=False,
+                category=self.category,
+                explanation=(
+                    "Un-assessed: the judge's reference pieces do not cover "
+                    "the whole reference answer, so parts of it -- likely the "
+                    "pieces the retrieval missed -- are missing from the "
+                    "recall denominator. Inspect details.judge_response to "
+                    "see what the judge returned."
+                ),
+                details={
+                    "skipped": "judge_parse_failure",
+                    "scorer_name": self.name,
+                    "judge_model": self.model,
+                    "judge_response": _sanitize_judge_value(result),
+                    "total_chunks": len(chunks),
+                    "uncovered_reference_text": uncovered_texts,
+                    "discarded_items": discarded_items,
+                },
+                assessed=False,
+            )
+
+        # The score weighs maximal same-verdict stretches of the reference by
+        # their length on the whitespace-collapsed text: supported stretch
+        # length over total stretch length. Piece count would move with the
+        # judge's partition -- splitting one unsupported sentence into three
+        # pieces would triple the penalty -- and counting runs without their
+        # length would freeze the score at 0.5 while any number of distinct
+        # facts goes unsupplied. Measuring stretch length does neither:
+        # splitting or merging equivalent pieces leaves the stretches, and so
+        # their measured lengths, unchanged, while every additional unsupplied
+        # fact adds reference length the retrieval did not supply. Merging
+        # same-verdict neighbours first is what makes the split invariance
+        # exact: the whitespace gaps the decomposition check allows must not
+        # leak out of the measurement when a supported sentence is split into
+        # words. Gaps between opposite-verdict stretches stay outside both, so
+        # the denominator is the stretches' own length, not the whole
+        # reference.
+        stretches: list[tuple[int, int, bool]] = []
+        for interval, supported_flag in sorted(
+            zip(item_intervals, (bool(item["supported"]) for item in valid_items))
+        ):
+            if stretches and stretches[-1][2] == supported_flag:
+                stretches[-1] = (stretches[-1][0], interval[1], supported_flag)
+            else:
+                stretches.append((interval[0], interval[1], supported_flag))
+        supported_length = sum(end - start for start, end, flag in stretches if flag)
+        total_length = sum(end - start for start, end, _flag in stretches)
+
+        recall = supported_length / total_length
+        explanation = (
+            f"{supported_length} of {total_length} reference character(s) "
+            f"supplied; recall {recall:.2f}, threshold {self.threshold}."
+        )
+
+        return ScorerResult(
+            score=recall,
+            passed=ScoreNormalizer.apply_threshold(recall, self.threshold),
+            category=self.category,
+            explanation=explanation,
+            details={
+                "scorer_name": self.name,
+                "raw_score": recall,
+                "max_score": 1,
+                "judge_model": self.model,
+                "reference_items": valid_items,
+                "supported_span_length": supported_length,
+                "total_span_length": total_length,
+                "unverified_support_items": unverified_support_items,
+                "discarded_items": discarded_items,
                 "judge_score": judge_score,
                 "judge_explanation": str(result.get("explanation", "")),
             },

@@ -496,7 +496,12 @@ present and retains verified supporting or contradicting spans as evidence.
 The `RetrievalRelevanceScorer` grades retrieval quality itself: it validates
 the judge's per-chunk relevance verdicts against the parsed chunks, derives
 the overall score from them, and returns un-assessed rather than silently
-passing when the judge reply cannot be trusted.
+passing when the judge reply cannot be trusted. The `ContextPrecisionScorer`
+and `ContextRecallScorer` measure the retrieved set as a whole rather than
+chunk by chunk: precision reports the fraction of retrieved chunks the query
+actually needed, and recall reports how much of the row's reference answer the
+retrieval supplied. Both derive their score from validated verdicts, so a
+judge that cannot be trusted leaves the row un-assessed instead of scoring it.
 
 ## Weave-native evaluation in assessment
 
