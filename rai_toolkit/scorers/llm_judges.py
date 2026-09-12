@@ -2081,6 +2081,25 @@ def _leading_space(body: str) -> str:
     return body[: len(body) - len(body.lstrip(" \t"))]
 
 
+def _indent_width(body: str) -> int:
+    """How far a line is indented, counting a tab as four columns."""
+    return len(_leading_space(body).expandtabs(4))
+
+
+# A bullet or ordered marker followed by at least one space. The content of the
+# item begins after that run, and everything belonging to the item is measured
+# from there rather than from column zero.
+_LIST_ITEM_PATTERN = re.compile(r"^(?P<indent>[ \t]*)(?P<bullet>[-+*]|\d{1,9}[.)])(?P<gap>[ \t]+)")
+
+
+def _list_item_content_column(body: str) -> int | None:
+    """The column an item's content starts at, or ``None`` if not a list item."""
+    match = _LIST_ITEM_PATTERN.match(body)
+    if match is None:
+        return None
+    return len(match.group(0).expandtabs(4))
+
+
 def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
     """Ranges covered by fenced code blocks.
 
@@ -2105,10 +2124,14 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
     spans: list[tuple[int, int, int]] = []
     index = 0
     # An indented code block cannot interrupt a paragraph, so it only begins
-    # where no paragraph is open. That is what makes the rule safe to apply: a
-    # continuation line inside a list follows the item's text, so it is never
-    # read as code and a citation written there is still graded.
+    # where no paragraph is open.
     paragraph_open = False
+    # Indentation is relative to the enclosing list item, not to column zero. A
+    # blank line ends a paragraph but does not close a list item, so a second
+    # paragraph of the same item sits at the item's content column and is prose.
+    # Code inside an item needs four columns past that, and the stack tracks the
+    # column for each level of nesting.
+    containers: list[int] = []
     while index < len(lines):
         body = _line_body(lines[index])
 
@@ -2117,7 +2140,14 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
             index += 1
             continue
 
-        if not paragraph_open and len(_leading_space(body).expandtabs(4)) >= 4:
+        indent = _indent_width(body)
+        # A line shallower than the open item leaves it, and any item it was
+        # nested in. Only a line that is not itself indented code can do so.
+        while containers and indent < containers[-1] and indent < containers[-1] + 4:
+            containers.pop()
+        content_column = containers[-1] if containers else 0
+
+        if not paragraph_open and indent >= content_column + 4:
             probe = index
             last = index
             while probe < len(lines):
@@ -2125,13 +2155,25 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
                 if not candidate.strip():
                     probe += 1
                     continue
-                if len(_leading_space(candidate).expandtabs(4)) < 4:
+                if _indent_width(candidate) < content_column + 4:
                     break
                 last = probe
                 probe += 1
             start = offsets[index]
             spans.append((start, start, offsets[last] + len(lines[last])))
             index = last + 1
+            continue
+
+        opened = _list_item_content_column(body)
+        if opened is not None:
+            containers.append(opened)
+            paragraph_open = True
+            # A list item begins a new block, so an inline span cannot reach
+            # across it. Recorded with no extent: it masks nothing, it only
+            # stops a backtick run before the item pairing with one after.
+            start = offsets[index]
+            spans.append((start, start, start))
+            index += 1
             continue
 
         match = _FENCE_OPEN.search(body)
@@ -2142,12 +2184,12 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
 
         fence = match.group("fence")
         indent = body[: match.start("fence")]
-        # A fence opens a line, with at most three leading spaces. A run later
-        # in the line is prose ("see ``` for fences"), and a deeper indent is an
-        # indented code block, which ends at the first unindented line rather
-        # than running on. Neither opens a block, and treating either as one
-        # masked the prose after it. A tab counts as four columns.
-        if indent.strip() or len(indent.expandtabs(4)) > 3:
+        # A fence opens a line, with at most three leading spaces past its
+        # container's content column. A run later in the line is prose ("see
+        # ``` for fences"), and a deeper indent is an indented code block.
+        # Neither opens a block, and treating either as one masked the prose
+        # after it. A tab counts as four columns.
+        if indent.strip() or _indent_width(body) - content_column > 3:
             paragraph_open = True
             index += 1
             continue
@@ -2187,9 +2229,24 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
 
         if closed_at is None:
             # A reply truncated mid-block leaves one open, and the code before
-            # the cut is still code.
-            spans.append((block_start, start, len(text)))
-            break
+            # the cut is still code. Inside a list item the block ends with the
+            # item rather than with the response: the first line shallower than
+            # the item's content column has left it.
+            end_index = len(lines)
+            if content_column:
+                for probe in range(index + 1, len(lines)):
+                    candidate = _line_body(lines[probe])
+                    if candidate.strip() and _indent_width(candidate) < content_column:
+                        end_index = probe
+                        break
+            if end_index >= len(lines):
+                spans.append((block_start, start, len(text)))
+                break
+            spans.append((block_start, start, offsets[end_index]))
+            paragraph_open = False
+            containers.clear()
+            index = end_index
+            continue
 
         spans.append((block_start, start, offsets[closed_at] + len(lines[closed_at])))
         paragraph_open = False

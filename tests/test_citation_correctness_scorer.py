@@ -2402,6 +2402,111 @@ def test_crlf_and_lf_responses_parse_identically() -> None:
     ]
 
 
+# Indentation inside a list is measured from the item's content column, not
+# from column zero. A blank line ends a paragraph but does not close a list
+# item, so a second paragraph of the same item sits at that column and is
+# prose - masking it hid a fabricated citation and passed the row.
+LIST_PROSE = {
+    "ordered_second_paragraph": (
+        "1. Notices are required [adverse-action].\n\n"
+        "    Rates are capped [reg-z-2024]."
+    ),
+    "bullet_second_paragraph": (
+        "- Notices are required [adverse-action].\n\n"
+        "  Rates are capped [reg-z-2024]."
+    ),
+    "nested_item_after_blank": (
+        "- Notices are required [adverse-action].\n\n"
+        "  - Rates are capped [reg-z-2024]."
+    ),
+}
+LIST_EOL = {"lf": "\n", "cr": "\r", "crlf": "\r\n"}
+
+
+@pytest.mark.parametrize("form", sorted(LIST_PROSE), ids=sorted(LIST_PROSE))
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_list_prose_is_not_masked_as_code(form: str, eol: str) -> None:
+    output = LIST_PROSE[form].replace("\n", LIST_EOL[eol])
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize("form", sorted(LIST_PROSE), ids=sorted(LIST_PROSE))
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_list_prose_still_fails_on_the_citation(form: str, eol: str) -> None:
+    output = LIST_PROSE[form].replace("\n", LIST_EOL[eol])
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+# The controls: genuine indented code stays excluded. Inside an item that means
+# four columns past the item's content column, not past column zero.
+INDENTED_CODE_CONTROLS = {
+    "code_in_a_bullet_item": (
+        "- Notices are required [adverse-action].\n\n      Rates [reg-z-2024]."
+    ),
+    "code_in_an_ordered_item": (
+        "1. Notices are required [adverse-action].\n\n        Rates [reg-z-2024]."
+    ),
+    "code_outside_any_list": (
+        "Notices are required [adverse-action].\n\n    Rates [reg-z-2024]."
+    ),
+    "code_at_the_document_start": (
+        "    Rates [reg-z-2024].\n\nNotices are required [adverse-action]."
+    ),
+    "a_fenced_block": (
+        "Notices are required [adverse-action].\n```\nRates [reg-z-2024]\n```"
+    ),
+    "tab_indented_code": (
+        "Notices are required [adverse-action].\n\n\tRates [reg-z-2024]."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "form", sorted(INDENTED_CODE_CONTROLS), ids=sorted(INDENTED_CODE_CONTROLS)
+)
+def test_genuine_indented_code_is_still_excluded(form: str) -> None:
+    citations = _extract_citations(INDENTED_CODE_CONTROLS[form])
+
+    assert "reg-z-2024" not in [c.marker for c in citations]
+
+
+def test_a_fence_inside_a_list_item_is_measured_from_the_item() -> None:
+    # Four columns absolute but only two past the item's content column, so it
+    # opens a block rather than being read as indented text.
+    output = "- Notices are required [adverse-action].\n    ```\n  Rates [reg-z-2024]"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_an_unclosed_fence_in_a_list_ends_with_the_item() -> None:
+    # It runs to the end of its container, not the end of the response.
+    output = "- Notices are required [adverse-action].\n   ```\nRates [reg-z-2024]"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+def test_a_list_item_ends_a_paragraph_for_inline_spans() -> None:
+    # A backtick run before an item cannot pair with one after it.
+    output = "Notices `x [adverse-action]\n- item\n`Rates [reg-z-2024]`"
+
+    citations = _extract_citations(output)
+
+    assert "adverse-action" in [c.marker for c in citations]
+
+
 # An indented code block cannot interrupt a paragraph, which is what makes the
 # rule safe to apply: a continuation line inside a list follows the item's text,
 # so it is never read as code and a citation written there is still graded.
