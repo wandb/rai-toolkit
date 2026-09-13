@@ -7,6 +7,7 @@
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
 from rai_toolkit.scorers.composite import CompositeScorer
 from rai_toolkit.scorers.llm_judges import (
+    CitationCorrectnessScorer,
     ContentSafetyJudge,
     ContextPrecisionScorer,
     ContextRecallScorer,
@@ -31,6 +32,7 @@ from rai_toolkit.scorers.programmatic import (
 
 __all__ = [
     "BaseScorer",
+    "CitationCorrectnessScorer",
     "CompositeScorer",
     "ContentSafetyJudge",
     "ContextPrecisionScorer",
