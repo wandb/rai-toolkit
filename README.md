@@ -164,7 +164,7 @@ into a claimed compliance breach.
 ```
 
 ### 4. Red-team adversarial suite
-32 curated attack templates covering jailbreaks, prompt injection, PII
+36 curated attack templates covering jailbreaks, prompt injection, PII
 extraction, bias probes, hallucination elicitation, goal hijacking, and
 refusal bypass. Optional third-party red-team tools live under
 `integrations/`, not the core `rai_toolkit.redteam` package.
@@ -328,7 +328,7 @@ pip install "rai-toolkit[all] @ git+https://github.com/wandb/rai-toolkit.git"
 ```
 
 You can pin to a specific commit, tag, or branch by appending `@<ref>` to the
-git URL (e.g. `git+https://github.com/wandb/rai-toolkit.git@v0.1.0`).
+git URL (e.g. `git+https://github.com/wandb/rai-toolkit.git@v0.2.0`).
 
 The Python import path is `rai_toolkit` (e.g. `from rai_toolkit import Assessor`)
 regardless of which install method you use.
@@ -600,7 +600,7 @@ rai_toolkit/
   monitoring/            Reassessment interval helpers (drift planning)
   guardrails/            Input/output guardrails, GuardedModel wrapper
   policies/              YAML policy engine + 13 starter policies
-  redteam/               32-attack catalog + AttackRunner
+  redteam/               36-attack catalog + AttackRunner
   prompts/               LLM-judge prompt templates (judge_prompts.py)
   examples/     Public benchmark loaders + curated JSON examples
   assessment/         End-to-end Assessor workflow + HTML report

@@ -6,9 +6,72 @@ behaviour are clear.
 
 ## Setup
 
+Use Python 3.10 or newer. From the repository root, install the core library
+and lightweight test dependencies:
+
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[all]"
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[dev]"
+```
+
+Install the quality tools separately, using the versions pinned in
+[CI](.github/workflows/ci.yml):
+
+```bash
+python -m pip install "ruff==0.16.6" "reuse[charset-normalizer]==6.2.0"
+```
+
+The `all` extra also installs the demo and optional integrations. It is not
+needed for the core contributor checks below.
+
+## Required local checks
+
+Run these checks from the repository root before marking a pull request ready:
+
+```bash
+python -m pytest -q
+python -m ruff check --select E9,F63,F7,F82 .
+reuse --no-multiprocessing lint
+git diff --check
+git diff --cached --check
+```
+
+Check the committed patch against the latest main branch as well:
+
+```bash
+git fetch origin main
+git diff --check origin/main...HEAD
+```
+
+Include the exact commands and results in the pull request, including any
+skipped tests. With only `.[dev]` installed, tests requiring optional Weave
+dependencies are skipped. Maintainers independently verify the checks before
+merge. CI also runs the core suite on Python 3.10, 3.11, and 3.12 and checks
+package builds and installation.
+
+## Optional offline Weave checks
+
+Use a separate environment so the core environment stays lightweight. These
+tests mock external services and do not require provider API keys. Run them
+when working on Weave integration and include the results in the pull request;
+they are optional for unrelated changes.
+
+```bash
+python -m venv .venv-weave
+source .venv-weave/bin/activate
+python -m pip install -e ".[dev,weave]"
+python -m pytest -q
+```
+
+CI tests both the latest compatible Weave release and the supported minimum.
+To check the minimum in the same Weave environment, install its pinned version
+and rerun the suite:
+
+```bash
+python -m pip install -e ".[dev,weave]" "weave==0.52.40"
+python -m pytest -q
+deactivate
 ```
 
 ## Starting work
