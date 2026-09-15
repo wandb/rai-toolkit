@@ -28,6 +28,7 @@ from rai_toolkit.scorers.programmatic import (
     RegexPIIScorer,
     ResponseLengthScorer,
 )
+from rai_toolkit.scorers.tool_calls import ToolCallAccuracyScorer
 
 __all__ = [
     "BaseScorer",
@@ -44,11 +45,12 @@ __all__ = [
     "OutputFormatScorer",
     "PrivacyJudge",
     "RegexPIIScorer",
-    "RetrievalRelevanceScorer",
     "ResponseLengthScorer",
+    "RetrievalRelevanceScorer",
     "RubricScorer",
     "ScoreNormalizer",
     "ScorerResult",
     "SecurityJudge",
+    "ToolCallAccuracyScorer",
     "TransparencyJudge",
 ]
