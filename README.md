@@ -555,6 +555,34 @@ ship in this repo).
 and `MultiTurnAgent` / `StreamingAgent` protocols so future harnesses can plug
 into the same compliance types without changing `BaseModel` today.
 
+`ToolCallAccuracyScorer` is an opt-in, offline scorer for complete structured
+invocation traces. Call it directly with recorded calls and explicit criteria:
+
+```python
+from rai_toolkit.scorers import ToolCallAccuracyScorer
+
+result = ToolCallAccuracyScorer().score(
+    output="The requested record was found.",
+    tool_calls=[
+        {"id": "call-1", "name": "lookup_record", "arguments": {"record_id": 42}}
+    ],
+    trace_complete=True,
+    success_criteria={
+        "tool_calls": {
+            "expected": [
+                {"name": "lookup_record", "arguments": {"record_id": 42}}
+            ],
+            "forbidden": ["send_email"],
+        }
+    },
+)
+assert result.assessed and result.passed
+```
+
+The current pipeline does not collect or forward invocation traces
+automatically. The scorer measures requested calls and exact arguments only;
+it does not establish successful execution or task completion.
+
 ## CLI
 
 ```bash
