@@ -274,6 +274,13 @@ def _cmd_policies_lint(args: argparse.Namespace) -> int:
         print(f"FAIL: {e}", file=sys.stderr)
         return 1
 
+    if not engine.policy_sets:
+        print(
+            f"FAIL: no *.yaml policy files were found in {directory}",
+            file=sys.stderr,
+        )
+        return 1
+
     total = len(engine.policies)
     print(f"OK: {total} policies loaded from {directory}")
     for policy in engine.policies:
