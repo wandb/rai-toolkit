@@ -24,11 +24,18 @@ import logging
 import sys
 from pathlib import Path
 
+from rai_toolkit._version import __version__
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="rai",
         description="Responsible AI toolkit: compliance, evaluation, guardrails.",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"rai {__version__}",
     )
     parser.add_argument(
         "--log-level",
