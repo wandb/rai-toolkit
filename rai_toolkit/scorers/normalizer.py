@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import math
+
 from rai_toolkit.scorers.base import ScorerResult
 
 
@@ -33,8 +35,12 @@ class ScoreNormalizer:
         Returns:
             Normalized score between 0.0 and 1.0.
         """
-        if max_value <= 0:
-            raise ValueError(f"max_value must be positive, got {max_value}")
+        if not math.isfinite(raw_score):
+            raise ValueError(f"raw_score must be finite, got {raw_score}")
+        if not math.isfinite(max_value) or max_value <= 0:
+            raise ValueError(
+                f"max_value must be a finite positive number, got {max_value}"
+            )
         normalized = max(0.0, min(1.0, raw_score / max_value))
         return 1.0 - normalized if invert else normalized
 
@@ -69,18 +75,22 @@ class ScoreNormalizer:
             results: List of ScorerResult objects.
             weights: Optional dict mapping category -> weight. Defaults to equal weights.
 
+        Un-assessed results are skipped entirely: their placeholder scores
+        are not a signal and must not dilute the real ones.
+
         Returns:
             Weighted average score between 0.0 and 1.0.
         """
-        if not results:
+        assessed = [r for r in results if r.assessed]
+        if not assessed:
             return 0.0
 
         if weights is None:
-            return sum(r.score for r in results) / len(results)
+            return sum(r.score for r in assessed) / len(assessed)
 
         total_weight = 0.0
         weighted_sum = 0.0
-        for result in results:
+        for result in assessed:
             w = weights.get(result.category, 1.0)
             weighted_sum += result.score * w
             total_weight += w
