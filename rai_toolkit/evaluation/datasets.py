@@ -95,10 +95,22 @@ class DatasetLoader:
     def _load_jsonl(path: Path) -> list[dict[str, Any]]:
         rows = []
         with open(path, encoding="utf-8") as f:
-            for line in f:
+            for line_number, line in enumerate(f, start=1):
                 line = line.strip()
-                if line:
-                    rows.append(DatasetLoader._normalize_keys(json.loads(line)))
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError as error:
+                    raise ValueError(
+                        f"Invalid JSON in {path} at line {line_number}: {error.msg}"
+                    ) from error
+                if not isinstance(row, dict):
+                    raise ValueError(
+                        f"Dataset row in {path} at line {line_number}"
+                        " must be a JSON object"
+                    )
+                rows.append(DatasetLoader._normalize_keys(row))
         logger.info("Loaded %d rows from %s", len(rows), path)
         return rows
 
