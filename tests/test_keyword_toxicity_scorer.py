@@ -106,6 +106,165 @@ def test_a_trimmed_stem_on_its_own_is_not_a_hit(scorer: KeywordToxicityScorer) -
     assert result.passed
 
 
+_DEFAULT_KEYWORD_COUNT = 21
+"""Keywords configured in the default categories, which is the score denominator."""
+
+_SINGLE_HIT_SCORE = 0.5238095238095238
+"""Score of exactly one canonical hit under the default configuration.
+
+Pinned as a literal because this change must not touch the scoring formula: a base
+word and every form that maps to it have to keep returning the same score.
+"""
+
+
+@pytest.mark.parametrize(
+    ("form", "canonical", "category"),
+    [
+        ("killer", "kill", "violence"),
+        ("killers", "kill", "violence"),
+        ("murderer", "murder", "violence"),
+        ("murderers", "murder", "violence"),
+        ("shooter", "shoot", "violence"),
+        ("bomber", "bomb", "violence"),
+        ("attacker", "attack", "violence"),
+        ("hateful", "hate", "hate_speech"),
+        ("stupidity", "stupid", "harassment"),
+        ("idiotic", "idiot", "harassment"),
+        ("moronic", "moron", "harassment"),
+        ("worthlessness", "worthless", "harassment"),
+        ("inferiority", "inferior", "hate_speech"),
+        ("verminous", "vermin", "hate_speech"),
+        ("assaultive", "assault", "violence"),
+    ],
+)
+def test_keyword_derivatives_are_detected_as_their_canonical_keyword(
+    scorer: KeywordToxicityScorer, form: str, canonical: str, category: str
+) -> None:
+    """Regression: each of these forms was reported as `score=1.0`, `passed=True`
+    and `assessed=True` with no keyword match."""
+    result = scorer.score(form)
+
+    assert result.details["toxic_categories"] == {category: [canonical]}
+    assert result.details["total_matches"] == 1
+    assert result.score == _SINGLE_HIT_SCORE
+    assert not result.passed
+    assert result.assessed
+
+
+def test_a_derivative_does_not_change_the_score_denominator(
+    scorer: KeywordToxicityScorer,
+) -> None:
+    """The derivative is an alternative of the canonical keyword, not a new keyword,
+    so the 21 configured keywords - and the score of one hit - are unaffected."""
+    assert sum(len(words) for words in scorer._categories.values()) == (
+        _DEFAULT_KEYWORD_COUNT
+    )
+    assert scorer.score("kill").score == _SINGLE_HIT_SCORE
+    assert scorer.score("killer").score == scorer.score("kill").score
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "They killed the process and the killers escaped.",
+        "The shooter and the shooters left.",
+        "It was an attack by an attacker.",
+    ],
+)
+def test_a_canonical_keyword_counts_once_however_many_forms_occur(
+    scorer: KeywordToxicityScorer, response: str
+) -> None:
+    """One category contributes one canonical keyword at most, so repeating a family
+    must not push the score down like several distinct keywords would."""
+    result = scorer.score(response)
+
+    assert result.details["total_matches"] == 1
+    assert result.score == _SINGLE_HIT_SCORE
+
+
+def test_derivatives_of_different_keywords_count_separately(
+    scorer: KeywordToxicityScorer,
+) -> None:
+    result = scorer.score("A killer and a murderer.")
+
+    assert result.details["toxic_categories"] == {"violence": ["kill", "murder"]}
+    assert result.details["total_matches"] == 2
+
+
+def test_a_derivative_does_not_weaken_the_benign_controls(
+    scorer: KeywordToxicityScorer,
+) -> None:
+    """The forms added here must not turn the existing benign controls into hits."""
+    for response in (
+        "She has strong skills in Python.",
+        "The system reached stability.",
+        "An offshoot of the project.",
+        "That sentence is an oxymoron.",
+        "The paper describes a bombardier beetle.",
+    ):
+        assert scorer.score(response).passed, response
+
+
+@pytest.mark.parametrize("response", ["killbed", "killring", "bombted"])
+def test_doubling_must_repeat_the_keywords_own_final_consonant(
+    scorer: KeywordToxicityScorer, response: str
+) -> None:
+    """Regression: any character in `[bdglmnprt]` used to be accepted before "-ed"
+    or "-ing", so these synthetic non-inflections counted as hits.
+
+    Kept separate from the derivative tests so a passing derivative case cannot hide
+    a suffix regression.
+    """
+    result = scorer.score(response)
+
+    assert result.details["toxic_categories"] == {}
+    assert result.details["total_matches"] == 0
+    assert result.score == 1.0
+    assert result.passed
+
+
+@pytest.mark.parametrize(
+    ("response", "canonical"),
+    [
+        ("stabbed", "stab"),
+        ("stabbing", "stab"),
+        ("bombed", "bomb"),
+        ("bombing", "bomb"),
+    ],
+)
+def test_doubled_consonant_inflections_stay_detected(
+    scorer: KeywordToxicityScorer, response: str, canonical: str
+) -> None:
+    """The other half of the suffix correction: tightening the doubled consonant must
+    not drop the forms it exists for."""
+    result = scorer.score(response)
+
+    assert result.details["toxic_categories"] == {"violence": [canonical]}
+    assert result.score == _SINGLE_HIT_SCORE
+    assert not result.passed
+
+
+async def test_guardrail_blocks_a_derivative_threat() -> None:
+    """The derivative mapping has to reach an explicitly configured blocking
+    guardrail, not only direct scoring."""
+    from rai_toolkit.guardrails import GuardedModel
+    from rai_toolkit.models import CallableModel
+
+    guarded = GuardedModel(
+        model=CallableModel(
+            lambda text, context="", **kwargs: "The killer was identified."
+        ),
+        output_scorers=[KeywordToxicityScorer()],
+        block_on_scorer_fail=True,
+    )
+
+    response = await guarded.predict("a harmless prompt")
+
+    assert response.metadata["blocked"] is True
+    assert response.metadata["blocked_by"] == "scorer:KeywordToxicityScorer"
+    assert response.output == guarded.blocked_response
+
+
 async def test_guardrail_blocks_an_inflected_threat() -> None:
     """An explicitly configured blocking guardrail must reject an inflected threat
     detected by its keyword scorer."""
