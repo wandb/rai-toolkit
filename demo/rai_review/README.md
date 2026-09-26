@@ -25,8 +25,13 @@ assessment pipeline in an app-team → RAI-team **review gate**.
 
 ## Run
 
+Use Python 3.11 or newer and run these commands from a clone of the repository.
+The toolkit is installed from source, not from PyPI.
+
 ```bash
-pip install "rai-toolkit[demo,weave]"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[demo,weave]"
 streamlit run demo/rai_review/app.py
 ```
 
@@ -55,7 +60,7 @@ Two ways to point the UI at the system under review:
 
 ### Bundled reference models (`demo_app/`)
 
-These are **not** part of the PyPI wheel; they exist in this repo so reviewers
+These are **not** part of the toolkit wheel; they exist in this repo so reviewers
 can run an end-to-end flow without wiring their own model first:
 
 | Model ref | Preset hint | Notes |

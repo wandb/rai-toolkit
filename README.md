@@ -9,10 +9,16 @@
 Prefer to watch first? See the full review gate in a short walkthrough video: https://www.youtube.com/watch?v=-dGIUA_LLik
 
 Companion resources: the ebook [Governance Workflows for AI Agents](https://wandb.ai/site/resources/whitepapers/operationalizing-ai-governance/) and the webinar [How to Operationalize AI Governance for Production Agents](https://wandb.ai/site/resources/events/how-to-operationalize-ai-governance-for-production-agents/).
+
+Requires **Python 3.11 or newer**. Create a fresh virtual environment when
+upgrading from Python 3.10; existing environments keep their original interpreter.
+
 ```bash
 git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
-pip install -e ".[all]"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[all]"
 ```
 
 ```bash
@@ -286,45 +292,59 @@ through adapters.
 This project is **not published to PyPI**. Install it directly from the
 source tree (clone + editable install) or straight from GitHub.
 
+Use Python 3.11 or newer. The core test suite runs on Python 3.11, 3.12,
+3.13, and 3.14. The examples below use an activated virtual environment;
+replace `python3.11` with another installed supported interpreter if needed.
+For Windows environment setup, see [Contributing](CONTRIBUTING.md#setup).
+
+The `garak` and `all` extras require a platform supported by PyTorch and
+torchvision. On Python 3.11, their current dependency set resolves on Linux,
+Windows, and Apple Silicon macOS. Intel macOS lacks compatible torchvision wheels for
+the declared version range; use the core install or other extras there.
+
 ### Editable install from a clone (recommended for contributors)
 
 ```bash
 git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
+python3.11 -m venv .venv
+source .venv/bin/activate
 
 # Core library only
-pip install -e .
+python -m pip install -e .
 
 # Weave tracing (recommended, lightweight, no ML deps)
-pip install -e ".[weave]"
+python -m pip install -e ".[weave]"
 
 # Weave tracing + LLM-judge scorers
-pip install -e ".[scorers]"
+python -m pip install -e ".[scorers]"
 
 # Public dataset loaders
-pip install -e ".[datasets]"
+python -m pip install -e ".[datasets]"
 
 # PyRIT red-team integration
-pip install -e ".[pyrit]"
+python -m pip install -e ".[pyrit]"
 
 # Garak red-team integration
-pip install -e ".[garak]"
+python -m pip install -e ".[garak]"
 
 # Anthropic Messages API model adapter
-pip install -e ".[anthropic]"
+python -m pip install -e ".[anthropic]"
 
 # Everything (incl. demo Streamlit app + dev tooling)
-pip install -e ".[all]"
+python -m pip install -e ".[all]"
 ```
 
 ### Direct install from GitHub (for downstream users)
 
 ```bash
-pip install "git+https://github.com/wandb/rai-toolkit.git"
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install "git+https://github.com/wandb/rai-toolkit.git"
 
 # With extras
-pip install "rai-toolkit[weave,scorers] @ git+https://github.com/wandb/rai-toolkit.git"
-pip install "rai-toolkit[all] @ git+https://github.com/wandb/rai-toolkit.git"
+python -m pip install "rai-toolkit[weave,scorers] @ git+https://github.com/wandb/rai-toolkit.git"
+python -m pip install "rai-toolkit[all] @ git+https://github.com/wandb/rai-toolkit.git"
 ```
 
 You can pin to a specific commit, tag, or branch by appending `@<ref>` to the

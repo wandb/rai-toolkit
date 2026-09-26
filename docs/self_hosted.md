@@ -2,6 +2,11 @@
 
 The core toolkit (`rai_toolkit/`) is vendor-neutral and runs entirely inside your network. This guide covers a fully self-hosted setup, for example HPC clusters with Slurm-scheduled GPU nodes serving models through vLLM. Requested in issue #5.
 
+Install the toolkit in a Python 3.11 or newer environment. When upgrading
+from Python 3.10, create a new environment and reinstall the toolkit and the
+extras you use. The model-serving process can run separately with its own
+runtime and dependency requirements.
+
 ## 1. Serve your model behind an OpenAI-compatible API
 
 vLLM exposes an OpenAI-compatible server out of the box:

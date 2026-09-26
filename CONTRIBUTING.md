@@ -6,14 +6,19 @@ behaviour are clear.
 
 ## Setup
 
-Use Python 3.10 or newer. From the repository root, install the core library
+Use Python 3.11 or newer. From the repository root, install the core library
 and lightweight test dependencies:
 
 ```bash
-python -m venv .venv
+python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
+
+You can substitute another installed Python version above the minimum.
+On Windows, use `py -3.11 -m venv .venv` and activate it with
+`.venv\Scripts\Activate.ps1` in PowerShell. Recreate environments made with
+Python 3.10; activating an old environment does not upgrade its interpreter.
 
 Install the quality tools separately, using the versions pinned in
 [CI](.github/workflows/ci.yml):
@@ -31,6 +36,7 @@ Run these checks from the repository root before marking a pull request ready:
 
 ```bash
 python -m pytest -q
+python -m pip check
 python -m ruff check --select E9,F63,F7,F82 .
 reuse --no-multiprocessing lint
 git diff --check
@@ -47,8 +53,9 @@ git diff --check origin/main...HEAD
 Include the exact commands and results in the pull request, including any
 skipped tests. With only `.[dev]` installed, tests requiring optional Weave
 dependencies are skipped. Maintainers independently verify the checks before
-merge. CI also runs the core suite on Python 3.10, 3.11, and 3.12 and checks
-package builds and installation.
+merge. CI runs the core suite on Python 3.11, 3.12, 3.13, and 3.14, checks
+package installation on 3.11 and 3.14, and verifies that built distributions
+reject Python 3.10.
 
 ## Optional offline Weave checks
 
@@ -58,13 +65,14 @@ when working on Weave integration and include the results in the pull request;
 they are optional for unrelated changes.
 
 ```bash
-python -m venv .venv-weave
+python3.11 -m venv .venv-weave
 source .venv-weave/bin/activate
 python -m pip install -e ".[dev,weave]"
 python -m pytest -q
 ```
 
-CI tests both the latest compatible Weave release and the supported minimum.
+CI tests both the latest compatible Weave release and the supported minimum
+on Python 3.11 and 3.12.
 To check the minimum in the same Weave environment, install its pinned version
 and rerun the suite:
 
@@ -73,6 +81,25 @@ python -m pip install -e ".[dev,weave]" "weave==0.52.40"
 python -m pytest -q
 deactivate
 ```
+
+## Dependency compatibility
+
+CI resolves the core dependencies, every declared extra independently, and
+all extras together on Linux for Python 3.11 through 3.14. It also installs
+`.[all]` with CPU-only PyTorch on Python 3.11 and runs `pip check`. Resolution
+and dependency consistency do not replace integration tests or establish
+support for every optional package on every operating system.
+
+To reproduce the resolution check without installing the optional packages:
+
+```bash
+python -m pip install "uv==0.11.24"
+python .github/scripts/check_dependencies.py --python-version 3.11 --python-platform x86_64-unknown-linux-gnu
+```
+
+Repeat with another supported Python version, or omit `--python-platform`
+to resolve for your local platform. Keep dependency constraints in
+`pyproject.toml`; do not bypass conflicts with `--no-deps` or resolver overrides.
 
 ## Starting work
 

@@ -22,8 +22,8 @@ Design goals:
 
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 import logging
 from typing import Any, Callable, TypeVar
 
@@ -153,7 +153,7 @@ def traced(
             op_cache["op"] = op
             return op
 
-        if asyncio.iscoroutinefunction(fn):
+        if inspect.iscoroutinefunction(fn):
 
             @functools.wraps(fn)
             async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
