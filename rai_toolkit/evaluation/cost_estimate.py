@@ -32,13 +32,32 @@ def estimate_assessment_run_cost(
     if not items:
         return None
     model = judge_model or os.environ.get("RAI_JUDGE_MODEL", "gpt-4o-mini")
-    pricing = MODEL_PRICING.get(model, MODEL_PRICING["gpt-4o-mini"])
     n = len(items)
     m = max(len(getattr(it, "scores", {}) or {}) for it in items)
     calls = n * max(m, 1)
     tin, tout = 800, 150
+
+    if model not in MODEL_PRICING:
+        return {
+            "status": "unavailable",
+            "reason": "unknown_model_pricing",
+            "requested_judge_model": model,
+            "preset": preset,
+            "judge_model_for_pricing": None,
+            "estimated_usd_upper_bound": None,
+            "assumed_llm_calls_upper_bound": calls,
+            "assumed_tokens_per_call": {"prompt": tin, "completion": tout},
+            "note": (
+                "Upper bound: assumes every scorer column is one paid LLM call; "
+                "regex/programmatic scorers cost $0. For live spend, rely on Weave's "
+                "built-in per-op cost tracking when weave.init() is on."
+            ),
+        }
+
+    pricing = MODEL_PRICING[model]
     usd = calls * (tin * pricing["prompt"] + tout * pricing["completion"])
     return {
+        "status": "ok",
         "preset": preset,
         "judge_model_for_pricing": model,
         "estimated_usd_upper_bound": round(usd, 4),
