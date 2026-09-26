@@ -86,7 +86,8 @@ deactivate
 
 CI resolves the core dependencies, every declared extra independently, and
 all extras together on Linux for Python 3.11 through 3.14. It also installs
-`.[all]` with CPU-only PyTorch on Python 3.11 and runs `pip check`. Resolution
+`.[all]` with CPU-only PyTorch in a clean Python 3.11 environment, runs
+`pip check`, and runs the test suite against those combined dependencies. Resolution
 and dependency consistency do not replace integration tests or establish
 support for every optional package on every operating system.
 
