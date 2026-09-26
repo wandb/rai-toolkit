@@ -38,6 +38,10 @@ class DatasetLoader:
     def from_file(path: str | Path) -> list[dict[str, Any]]:
         """Load a dataset from a file.
 
+        JSON files accept an array of objects or an object with a ``data``
+        array. Invalid dataset shapes raise ``ValueError`` with the filename;
+        invalid rows also include their one-based array position, not a line number.
+
         Args:
             path: Path to CSV, JSON, or JSONL file.
 
@@ -82,12 +86,21 @@ class DatasetLoader:
     def _load_json(path: Path) -> list[dict[str, Any]]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, list):
-            rows = [DatasetLoader._normalize_keys(item) for item in data]
-        elif isinstance(data, dict) and "data" in data:
-            rows = [DatasetLoader._normalize_keys(item) for item in data["data"]]
-        else:
-            raise ValueError("JSON must be a list of objects or {data: [...]}")
+        if isinstance(data, dict):
+            data = data.get("data")
+        if not isinstance(data, list):
+            raise ValueError(
+                f"{path}: JSON dataset must be an array of objects "
+                "or an object with a 'data' array"
+            )
+
+        rows = []
+        for row_number, item in enumerate(data, start=1):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"{path}: row {row_number}: dataset row must be a JSON object"
+                )
+            rows.append(DatasetLoader._normalize_keys(item))
         logger.info("Loaded %d rows from %s", len(rows), path)
         return rows
 
