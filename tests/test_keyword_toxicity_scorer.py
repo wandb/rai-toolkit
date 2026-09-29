@@ -244,6 +244,94 @@ def test_doubled_consonant_inflections_stay_detected(
     assert not result.passed
 
 
+_CUSTOM_KEYWORD_SINGLE_HIT_SCORE = 0.5454545454545454
+"""Score of one hit for a scorer with the 21 default keywords plus one custom keyword.
+
+The custom keyword adds exactly one entry to the denominator, which is what keeps the
+per-keyword calibration intact.
+"""
+
+
+@pytest.mark.parametrize(
+    ("keyword", "response"),
+    [
+        ("nab", "nabbed"),
+        ("NAB", "nabbed"),
+        ("nAb", "nabbed"),
+        ("nab", "NABBED"),
+        ("NAB", "Nabbed"),
+        ("nAb", "naBBed"),
+        ("grab", "grabbing"),
+        ("GRAB", "grabbing"),
+        ("GrAb", "GrAbBing"),
+    ],
+)
+def test_a_custom_keyword_is_matched_case_insensitively_in_its_own_spelling(
+    keyword: str, response: str
+) -> None:
+    """Regression: the doubling test compared the keyword's final character against a
+    lowercase set, so an uppercase keyword never got a doubled alternative at all -
+    `re.IGNORECASE` cannot recover an alternative that was never built. A configured
+    "NAB" missed "nabbed" entirely while "nab" matched it."""
+    scorer = KeywordToxicityScorer(extra_keywords={"custom": [keyword]})
+
+    result = scorer.score(response)
+
+    assert result.details["toxic_categories"] == {"custom": [keyword]}
+    assert result.details["total_matches"] == 1
+    assert result.score == _CUSTOM_KEYWORD_SINGLE_HIT_SCORE
+    assert result.assessed
+    assert not result.passed
+
+
+def test_case_variants_of_a_custom_keyword_score_identically() -> None:
+    """The casing of the configured keyword or of the response must not move the score:
+    the evidence keeps the caller's spelling and the denominator counts one keyword."""
+    scores = {
+        keyword: KeywordToxicityScorer(extra_keywords={"custom": [keyword]})
+        .score("nabbed")
+        .score
+        for keyword in ("nab", "NAB", "nAb")
+    }
+
+    assert set(scores.values()) == {_CUSTOM_KEYWORD_SINGLE_HIT_SCORE}
+
+
+@pytest.mark.parametrize(
+    ("keyword", "response"),
+    [
+        ("snare", "snaring"),
+        ("SNARE", "snaring"),
+        ("Snare", "snaring"),
+        ("SNARE", "SNARING"),
+    ],
+)
+def test_an_e_dropping_custom_keyword_keeps_its_form_case_insensitively(
+    keyword: str, response: str
+) -> None:
+    """Pre-existing on `main`: the e-dropping branch tested `keyword.endswith("e")`, so
+    it was skipped for an uppercase keyword and "SNARE" missed "snaring" the same way."""
+    scorer = KeywordToxicityScorer(extra_keywords={"custom": [keyword]})
+
+    result = scorer.score(response)
+
+    assert result.details["toxic_categories"] == {"custom": [keyword]}
+    assert result.score == _CUSTOM_KEYWORD_SINGLE_HIT_SCORE
+    assert not result.passed
+
+
+@pytest.mark.parametrize("response", ["KILLBED", "KillRing", "BOMBTED"])
+def test_case_variants_of_a_synthetic_doubling_are_still_not_hits(
+    scorer: KeywordToxicityScorer, response: str
+) -> None:
+    """Normalizing the doubling check must not reopen the synthetic non-inflections."""
+    result = scorer.score(response)
+
+    assert result.details["toxic_categories"] == {}
+    assert result.score == 1.0
+    assert result.passed
+
+
 async def test_guardrail_blocks_a_derivative_threat() -> None:
     """The derivative mapping has to reach an explicitly configured blocking
     guardrail, not only direct scoring."""

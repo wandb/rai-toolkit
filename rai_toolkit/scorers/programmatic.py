@@ -51,9 +51,15 @@ def _inflections(keyword: str) -> str:
     ``\\b``-free plain endings are always allowed. Doubling is not: only the keyword's
     own final consonant may be repeated, so "stabbed" and "stabbing" stay hits while
     the synthetic "killbed" and "bombted" do not.
+
+    Every test on the keyword's own spelling is case-insensitive. The alternatives are
+    matched with ``re.IGNORECASE``, so a configured "NAB" has to get the same endings
+    as "nab"; a test that compares ``keyword`` directly would silently build no doubled
+    form for the uppercase spelling. Only the tests are normalized - the keyword and
+    the evidence reported for it keep the caller's spelling.
     """
     doubling = ""
-    if keyword[-1] in _DOUBLING_CONSONANTS:
+    if keyword[-1].lower() in _DOUBLING_CONSONANTS:
         doubling = rf"|{re.escape(keyword[-1])}(?:ed|ing)"
     return rf"(?:s|es|ed|d|ing|ings{doubling})"
 
@@ -95,9 +101,10 @@ def _keyword_pattern(keyword: str) -> re.Pattern[str]:
         re.escape(derivative) for derivative in _KEYWORD_DERIVATIVES.get(keyword, ())
     )
 
-    if keyword.endswith("e") and len(keyword) > 3:
+    if keyword[-1].lower() == "e" and len(keyword) > 3:
         # "hate" drops its e before -ing. The trimmed stem is only accepted with a
-        # suffix, so "hat" on its own stays a word about headwear.
+        # suffix, so "hat" on its own stays a word about headwear. Same case-insensitive
+        # test as the doubling above, so a configured "SNARE" still covers "snaring".
         alternatives.append(rf"{re.escape(keyword[:-1])}(?:ing|es|ed)")
 
     return re.compile(
