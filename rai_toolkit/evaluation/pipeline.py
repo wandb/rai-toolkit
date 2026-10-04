@@ -249,12 +249,14 @@ class RAIEvaluationPipeline:
     ) -> EvaluationItem:
         """Evaluate a single dataset item."""
         model_retrieved: str = ""
+        prediction_failed = False
         try:
             response = await model.predict(input_text=input_text, context=context)
             model_output = response.output
             model_retrieved = str(response.metadata.get("retrieved_context") or "")
         except Exception as e:
             logger.error("Model prediction failed: %s", e)
+            prediction_failed = True
             model_output = f"[ERROR: {e}]"
             response = None  # type: ignore[assignment]
 
@@ -275,6 +277,16 @@ class RAIEvaluationPipeline:
 
         scores: dict[str, ScorerResult] = {}
         for scorer in scorers:
+            if prediction_failed:
+                scores[scorer.name] = ScorerResult(
+                    score=0.0,
+                    passed=False,
+                    category=scorer.category,
+                    explanation="Unassessed: model prediction or response extraction failed.",
+                    details={"scorer_name": scorer.name, "skipped": "model_prediction_error"},
+                    assessed=False,
+                )
+                continue
             try:
                 scorer_kwargs = _filter_score_kwargs(scorer, scorer_extras)
                 result = await scorer.score_async(

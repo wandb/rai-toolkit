@@ -44,6 +44,19 @@ Code consuming a result directly must check `assessed` before interpreting it.
 If you use `ScoreNormalizer.aggregate_scores` directly, filter unassessed
 results yourself; that helper does not filter them.
 
+If model prediction or response extraction raises an exception, the core evaluation
+pipeline retains the dataset row and its diagnostic `model_output`, but does not
+invoke any requested scorer. Each scorer receives an unassessed placeholder with
+`details["skipped"] = "model_prediction_error"` and its `scorer_name`. Error text is
+not a model response to measure; a successful response beginning with `[ERROR:`
+is still scored normally.
+
+Summary score and pass-rate metrics continue to use only assessed results. A run
+with partial prediction coverage can therefore pass on its assessed subset;
+check `unassessed_items` alongside the scores. If every prediction fails, there
+are no measured category scores and the overall score is zero. These placeholders
+represent unavailable measurements, not measured safety or quality failures.
+
 ## A small offline example
 
 This scorer measures literal reference-text inclusion. It does not establish
