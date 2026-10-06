@@ -584,6 +584,10 @@ For custom scorers, see the [scorer-authoring guide](docs/scorer_authoring.md),
 including result semantics, verified evidence, retrieval-score denominators,
 and offline validation.
 
+To see an evaluation reproduce itself — six synthetic responses scored offline
+by the shipped `RegexPIIScorer`, with pinned fixtures, hashes and artifacts —
+see [docs/reproducible_evaluation.md](docs/reproducible_evaluation.md).
+
 ## Weave-native evaluation in assessment
 
 When you pass `weave_project=` to `Assessor` (or `rai assess --weave-project
