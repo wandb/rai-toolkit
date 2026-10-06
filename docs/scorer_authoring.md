@@ -111,6 +111,109 @@ For asynchronous I/O, implement `score_async` and keep the required `score`
 method's behavior explicit. The base implementation of `score_async` calls
 `score` directly; it does not move blocking work to a worker thread.
 
+## Read scores alongside coverage
+
+Run this after the `ReferenceTextScorer` example above, in the same Python
+script. The model returns fixed synthetic responses. An empty-category profile
+selects no built-in scorers, so only our explicit scorer runs, without provider
+or judge calls or API keys.
+
+```python
+import asyncio
+
+from rai_toolkit.compliance.engine import ComplianceMappingEngine
+from rai_toolkit.compliance.frameworks import ComplianceProfile, Framework
+from rai_toolkit.evaluation.pipeline import RAIEvaluationPipeline
+from rai_toolkit.models.base import BaseModel, ModelResponse
+
+
+class OfflineModel(BaseModel):
+    name = "offline-reference-example"
+
+    async def predict(self, input_text, context="", **kwargs):
+        answers = {
+            "Measured success": "The limit is 10.",
+            "Measured failure": "The limit is 20.",
+            "Missing evidence": "The limit is 10.",
+        }
+        return ModelResponse(output=answers[input_text])
+
+
+profile = ComplianceProfile(
+    name="Reference text coverage",
+    framework=Framework.MIT_AI_RISK,
+    categories=[],
+)
+pipeline = RAIEvaluationPipeline(
+    ComplianceMappingEngine(), additional_scorers=[ReferenceTextScorer()]
+)
+dataset = [
+    {"input": "Measured success", "expected": "limit is 10"},
+    {"input": "Measured failure", "expected": "limit is 10"},
+    {"input": "Missing evidence"},
+]
+results = asyncio.run(
+    pipeline.run_evaluation(OfflineModel(), profile, dataset)
+)
+for item in results.items:
+    result = item.scores["reference_text"]
+    print(item.input, result.score, result.passed, result.assessed)
+
+summary = results.summary["MIT-3.1"]
+assert summary["mean_score"] == 0.5
+assert summary["pass_rate"] == 0.5
+assert summary["total_items"] == 2
+assert summary["passed_items"] == 1
+assert summary["failed_items"] == 1
+assert summary["unassessed_items"] == 1
+attempted = summary["total_items"] + summary["unassessed_items"]
+coverage = summary["total_items"] / attempted
+assert coverage == 2 / 3
+print(summary)
+print(f"Coverage: {summary['total_items']}/{attempted} = {coverage:.3f}")
+
+unassessed = asyncio.run(
+    pipeline.run_evaluation(OfflineModel(), profile, [dataset[2]])
+)
+gap = unassessed.summary["MIT-3.1"]
+assert gap["mean_score"] is None
+assert gap["pass_rate"] is None
+assert gap["total_items"] == 0
+assert gap["passed_items"] == 0
+assert gap["failed_items"] == 0
+assert gap["unassessed_items"] == 1
+assert unassessed.overall_score == 0.0
+assert unassessed.overall_passed is False
+print("All unassessed:", gap)
+print("Coverage: 0/1 = 0.000")
+```
+
+Save both Python blocks together as `coverage_example.py` and run
+`python coverage_example.py` from an environment with the core toolkit installed.
+The first three printed rows are:
+
+```text
+Measured success 1.0 True True
+Measured failure 0.0 False True
+Missing evidence 0.0 False False
+```
+
+The mean is `(1.0 + 0.0) / 2 = 0.5`, and the pass rate is `1 / 2 = 0.5`.
+Both denominators count only the two assessed rows. `total_items` is the assessed
+count, not the attempted count. Coverage uses all three attempted rows and is
+`2 / 3`, about 66.7%. With one scorer per row in this example, these counts also
+equal dataset row counts; multiple scorers in a category count scorer results.
+Coverage is calculated from the summary counts here, not a separate summary field.
+The missing reference contributes to `unassessed_items`, not `failed_items`, and
+its zero and false placeholders do not lower the mean or pass rate.
+
+In the all-unassessed run, category mean and pass rate are `None`, with zero
+assessed results and one visible coverage gap. The core pipeline still returns
+`overall_score=0.0` and `overall_passed=False` because there are no measurements.
+Those overall values are placeholders, not a measured category failure or
+evidence that the missing-reference row passed. Read the category counts before
+interpreting the overall verdict.
+
 ## Choose skip rules for the measurement
 
 Missing required context, a missing reference answer, or an unusable judge reply
