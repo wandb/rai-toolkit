@@ -11,19 +11,16 @@ recorded from a real session.
 
 ## Run it
 
-From a git checkout (the script reads its own revision, so a source archive is not a supported way
-to reproduce it). The revision this example was implemented at is
-`42284034c9b39621a2138fa3cd4848951d3bc0ab` (`docs: add an offline, reproducible PII-pattern replay
-example`), the first commit of pull request
-[#111](https://github.com/wandb/rai-toolkit/pull/111); no release contains it yet. That commit
-predates the LF pin in `.gitattributes`, so the clone below turns end-of-line conversion off, which
-is what keeps the fixture bytes the manifest hashes:
+Run from a Git checkout: the script reads its own revision, so a source archive is not a supported
+way to reproduce it. The commands below pin `0b8b8247cd909a23d0cb64351c90b257e4264bec`, the reviewed
+implementation from [#111](https://github.com/wandb/rai-toolkit/pull/111), including its LF and
+fixture-validation fixes. No release contains this example yet.
 
 ```bash
-git clone --config core.autocrlf=false https://github.com/wandb/rai-toolkit.git
+git clone https://github.com/wandb/rai-toolkit.git
 cd rai-toolkit
 git fetch origin pull/111/head
-git checkout 42284034c9b39621a2138fa3cd4848951d3bc0ab
+git checkout 0b8b8247cd909a23d0cb64351c90b257e4264bec
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
