@@ -358,3 +358,91 @@ def test_verification_detects_changed_expectations(checkout, tmp_path):
     # Without `--verify` the committed expectations are never consulted, so the same edit changes
     # nothing about the run: the file only matters when it is asked for.
     assert run_in(checkout, tmp_path / "out").returncode == 0
+
+
+def test_the_hashed_fixtures_are_pinned_to_lf():
+    """A CRLF checkout must not rewrite the bytes the manifest pins (see `.gitattributes`)."""
+    paths = [
+        "docs/examples/pii_pattern_replay/responses.json",
+        "docs/examples/pii_pattern_replay/fixture_manifest.json",
+        "docs/examples/pii_pattern_replay/expected_results.json",
+        SOURCE_FIXTURE_NAME,
+    ]
+    for relative in paths:
+        checked = subprocess.run(
+            ["git", "check-attr", "eol", "--", relative],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert checked.stdout.strip().endswith("eol: lf"), checked.stdout
+
+
+@pytest.mark.parametrize(
+    "payload", [[], None, 42, "text"], ids=["list", "null", "number", "string"]
+)
+def test_a_non_object_responses_root_is_rejected(checkout, tmp_path, payload):
+    """A JSON root that is not an object is refused with its file and shape, before scoring."""
+    write_responses(checkout, payload)
+
+    result = run_in(checkout, tmp_path / "out")
+
+    assert result.returncode != 0
+    assert "responses must be a JSON object" in result.stderr
+    assert not (tmp_path / "out" / "results.json").exists()
+
+
+def test_a_non_object_manifest_root_or_boundary_is_rejected(checkout, tmp_path):
+    """The manifest's own object boundary is checked, root and nested pins alike."""
+    example = checkout / "docs" / "examples" / "pii_pattern_replay"
+    manifest_file = example / "fixture_manifest.json"
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+
+    def write(payload):
+        manifest_file.write_text(
+            json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+        )
+
+    write([])
+    assert "manifest must be a JSON object" in run_in(checkout, tmp_path / "out").stderr
+
+    write({**manifest, "source": []})
+    assert "manifest 'source' must be an object" in run_in(
+        checkout, tmp_path / "out"
+    ).stderr
+
+    write({**manifest, "responses": None})
+    assert "manifest 'responses' must be an object" in run_in(
+        checkout, tmp_path / "out"
+    ).stderr
+
+
+def test_a_non_array_source_fixture_is_rejected(checkout, tmp_path):
+    """The bundled fixture is an array; a repinned root of another type is refused by name."""
+    text = '{"probes": []}\n'
+    (checkout / SOURCE_FIXTURE_NAME).write_text(text, encoding="utf-8")
+    manifest_file = (
+        checkout / "docs" / "examples" / "pii_pattern_replay" / "fixture_manifest.json"
+    )
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    manifest["source"]["sha256"] = hashlib.sha256(text.encode()).hexdigest()
+    manifest_file.write_text(
+        json.dumps(manifest, sort_keys=True, indent=2) + "\n", encoding="utf-8"
+    )
+
+    result = run_in(checkout, tmp_path / "out")
+
+    assert result.returncode != 0
+    assert "source fixture must be a JSON array" in result.stderr
+
+
+def test_a_non_object_expected_results_root_is_rejected(checkout, tmp_path):
+    """`--verify` refuses to read expectations that are not an object, by name."""
+    example = checkout / "docs" / "examples" / "pii_pattern_replay"
+    (example / "expected_results.json").write_text("null\n", encoding="utf-8")
+
+    result = run_in(checkout, tmp_path / "out", "--verify")
+
+    assert result.returncode != 0
+    assert "expected results must be a JSON object" in result.stderr

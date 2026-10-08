@@ -12,9 +12,18 @@ recorded from a real session.
 ## Run it
 
 From a git checkout (the script reads its own revision, so a source archive is not a supported way
-to reproduce it):
+to reproduce it). The revision this example was implemented at is
+`42284034c9b39621a2138fa3cd4848951d3bc0ab` (`docs: add an offline, reproducible PII-pattern replay
+example`), the first commit of pull request
+[#111](https://github.com/wandb/rai-toolkit/pull/111); no release contains it yet. That commit
+predates the LF pin in `.gitattributes`, so the clone below turns end-of-line conversion off, which
+is what keeps the fixture bytes the manifest hashes:
 
 ```bash
+git clone --config core.autocrlf=false https://github.com/wandb/rai-toolkit.git
+cd rai-toolkit
+git fetch origin pull/111/head
+git checkout 42284034c9b39621a2138fa3cd4848951d3bc0ab
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
@@ -23,8 +32,8 @@ python docs/examples/pii_pattern_replay/run.py --output-dir /tmp/rai-pii-replay-
 python -m pytest -q tests/test_reproducible_evaluation.py
 ```
 
-The revision this example was implemented at is recorded in the pull request that added it and in
-every `run.json` a run writes; no release contains it yet.
+Every `run.json` a run writes records the checkout's own revision as well, so a reader can tell
+which revision produced an artifact.
 
 Two runs write byte-identical `results.json`. `--verify` returns zero only when the input hashes, the
 rows and the summary match the committed expectations, and it fails when a row comes back
@@ -54,7 +63,7 @@ example does **not** measure whether a model protects personal data, whether the
 is real, or whether any regulation is satisfied. It measures whether an evaluation can be run and
 reproduced from its own inputs.
 
-`000-00-0000` is an intentionally invalid SSN — it cannot belong to anyone — and the shipped `ssn`
+`000-00-0000` is an intentionally invalid SSN (it cannot belong to anyone), and the shipped `ssn`
 pattern matches it, so the row is reported as a failure. That is the recorded behaviour of the
 scorer, preserved on purpose: an example that quietly special-cased it would be an example of
 hiding a false positive rather than of measuring one.
@@ -72,7 +81,7 @@ hiding a false positive rather than of measuring one.
 
 `results.json` is pinned and deterministic: sorted keys, two-space indentation, a trailing newline. It
 holds no timestamp, which is why two runs in different directories agree byte for byte. `run.json` is
-allowed to differ between environments — that is what it is for — and it deliberately records no
+allowed to differ between environments (that is what it is for), and it deliberately records no
 environment variables, credentials or absolute local paths.
 
 `run.json` keeps two versions apart, because they mean different things: `toolkit_version` is what
@@ -83,8 +92,8 @@ pretending they are the same.
 
 ## Where the data comes from
 
-The prompts are the toolkit's own bundled sample, `rai_toolkit/examples/pii_probes.json` — Apache-2.0,
-part of this repository, not a downloaded research dataset. Row indices 0, 3 and 5 are used, in that
+The prompts are the toolkit's own bundled sample, `rai_toolkit/examples/pii_probes.json`
+(Apache-2.0), part of this repository, not a downloaded research dataset. Row indices 0, 3 and 5 are used, in that
 order, and the fixture's `expected` text stays where it belongs: as source context, not as a ground
 truth classification for a regex-only replay. The manifest pins the file's SHA-256 and the revision it
 was measured at.

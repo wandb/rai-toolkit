@@ -4,8 +4,8 @@
 
 """Offline, reproducible replay of synthetic responses through ``RegexPIIScorer``.
 
-Six hand-authored responses — three that carry a PII pattern the shipped scorer is configured to
-find, three that do not — are scored once, and the whole run can be reproduced from the same source
+Six hand-authored responses (three that carry a PII pattern the shipped scorer is configured to
+find, three that do not) are scored once, and the whole run can be reproduced from the same source
 revision and fixtures. Nothing here calls a model, a provider or the network: the responses are
 fixtures in this directory, and the score comes from the shipped scorer.
 
@@ -20,7 +20,7 @@ additionally requires the rows and the summary to match the committed ``expected
 What this example does NOT measure: whether personal data is real, whether a model protects it, or
 whether any regulation is satisfied. ``000-00-0000`` is an intentionally invalid SSN that the
 shipped ``ssn`` pattern still matches, and it is reported as a failure because that is what the
-scorer does — the fixture records the behaviour rather than arguing with it.
+scorer does: the fixture records the behaviour rather than arguing with it.
 """
 
 from __future__ import annotations
@@ -93,35 +93,60 @@ def load_json(path: Path, what: str) -> Any:
         fail(f"{what} is not valid JSON: {path}: {exc}")
 
 
+def load_json_object(path: Path, what: str) -> dict[str, Any]:
+    """A JSON file that must hold an object, refused by name and shape when it does not."""
+    payload = load_json(path, what)
+    if not isinstance(payload, dict):
+        fail(f"{what} must be a JSON object ({path}), got {type(payload).__name__}")
+    return payload
+
+
+def load_json_array(path: Path, what: str) -> list[Any]:
+    """A JSON file that must hold an array, refused by name and shape when it does not."""
+    payload = load_json(path, what)
+    if not isinstance(payload, list):
+        fail(f"{what} must be a JSON array ({path}), got {type(payload).__name__}")
+    return payload
+
+
 def check_inputs() -> dict[str, Any]:
     """Verify the manifest, the fixtures and the input hashes before anything is scored."""
-    manifest = load_json(MANIFEST_FILE, "manifest")
+    manifest = load_json_object(MANIFEST_FILE, "manifest")
     source_hash = sha256_of(SOURCE_FIXTURE)
     responses_hash = sha256_of(RESPONSES_FILE)
+
+    source_pin = manifest.get("source")
+    if not isinstance(source_pin, dict):
+        fail(f"manifest 'source' must be an object, got {type(source_pin).__name__}")
+    responses_pin = manifest.get("responses")
+    if not isinstance(responses_pin, dict):
+        fail(
+            f"manifest 'responses' must be an object, got {type(responses_pin).__name__}"
+        )
 
     if manifest.get("schema_version") != SCHEMA_VERSION:
         fail(
             f"manifest schema_version is {manifest.get('schema_version')!r}, "
             f"this script reads {SCHEMA_VERSION}"
         )
-    if manifest.get("source", {}).get("sha256") != source_hash:
+    if source_pin.get("sha256") != source_hash:
         fail(
             f"{SOURCE_FIXTURE_NAME} has SHA-256 {source_hash}, but the manifest pins "
-            f"{manifest.get('source', {}).get('sha256')} — the source fixture changed, so the "
-            "expected results no longer describe it"
+            f"{source_pin.get('sha256')}; the source fixture changed, so the expected "
+            "results no longer describe it"
         )
-    if manifest.get("responses", {}).get("sha256") != responses_hash:
+    if responses_pin.get("sha256") != responses_hash:
         fail(
             f"responses.json has SHA-256 {responses_hash}, but the manifest pins "
-            f"{manifest.get('responses', {}).get('sha256')} — the responses changed, so the "
-            "expected results no longer describe them"
+            f"{responses_pin.get('sha256')}; the responses changed, so the expected "
+            "results no longer describe them"
         )
     return manifest
 
 
 def load_cases(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     """The response cases, in the order the manifest pins them, against their source prompts."""
-    responses = load_json(RESPONSES_FILE, "responses")
+    responses = load_json_object(RESPONSES_FILE, "responses")
     if responses.get("schema_version") != SCHEMA_VERSION:
         fail(
             f"responses schema_version is {responses.get('schema_version')!r}, "
@@ -147,7 +172,7 @@ def load_cases(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             fail(f"duplicate case id: {case['id']!r}")
         seen.add(case["id"])
 
-    source = load_json(SOURCE_FIXTURE, "source fixture")
+    source = load_json_array(SOURCE_FIXTURE, "source fixture")
     for case in cases:
         index = case["source_index"]
         if (
@@ -303,14 +328,20 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
         )
     except ValueError as exc:
         fail(f"refusing to write non-finite values to {path.name}: {exc}")
-    path.write_text(text + "\n", encoding="utf-8")
+    path.write_text(text + "\n", encoding="utf-8", newline="\n")
 
 
 def verify_rows(rows: list[dict[str, Any]], summary: dict[str, Any]) -> None:
     """Compare this run with the committed expectations, computed or not."""
-    expected = load_json(EXPECTED_FILE, "expected results")
-    if expected.get("rows") != rows:
-        for got, want in zip(rows, expected.get("rows", []), strict=False):
+    expected = load_json_object(EXPECTED_FILE, "expected results")
+    expected_rows = expected.get("rows")
+    if not isinstance(expected_rows, list):
+        fail(
+            "expected results 'rows' must be an array, "
+            f"got {type(expected_rows).__name__}"
+        )
+    if expected_rows != rows:
+        for got, want in zip(rows, expected_rows, strict=False):
             if got != want:
                 fail(
                     f"row {got['id']!r} does not match expected_results.json "
@@ -348,7 +379,7 @@ def main() -> int:
 
     manifest = check_inputs()
     cases = load_cases(manifest)
-    source = load_json(SOURCE_FIXTURE, "source fixture")
+    source = load_json_array(SOURCE_FIXTURE, "source fixture")
     rows = score_cases(cases, source)
     summary = summarise(rows)
 

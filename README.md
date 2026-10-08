@@ -584,9 +584,9 @@ For custom scorers, see the [scorer-authoring guide](docs/scorer_authoring.md),
 including result semantics, verified evidence, retrieval-score denominators,
 and offline validation.
 
-To see an evaluation reproduce itself — six synthetic responses scored offline
-by the shipped `RegexPIIScorer`, with pinned fixtures, hashes and artifacts —
-see [docs/reproducible_evaluation.md](docs/reproducible_evaluation.md).
+To see an evaluation reproduce itself, with six synthetic responses scored offline
+by the shipped `RegexPIIScorer` and pinned fixtures, hashes and artifacts, see
+[docs/reproducible_evaluation.md](docs/reproducible_evaluation.md).
 
 ## Weave-native evaluation in assessment
 
