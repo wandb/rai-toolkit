@@ -604,11 +604,18 @@ while policy checks still run on the converted `EvaluationResults`. Set
 
 Every assessment run attaches a rough **USD upper bound** for judge-style
 scoring (`cost_estimate` in JSON / HTML), computed in
-`rai_toolkit/evaluation/cost_estimate.py` from public list prices. It is not
-a bill; it is an order-of-magnitude sanity check for whitepapers and exec
-summaries. For live spend, rely on **Weave's built-in per-op cost
-tracking**: it records token counts × model price automatically once
-`weave.init()` has run.
+`rai_toolkit/evaluation/cost_estimate.py` from the local public list-price
+table. It is not a bill; it is an order-of-magnitude sanity check for
+whitepapers and exec summaries. The model is the explicit non-empty argument,
+otherwise `RAI_JUDGE_MODEL`, otherwise `gpt-4o-mini`. Supported models are
+priced as an upper bound that assumes every scorer column is one paid LLM
+call of 800 prompt tokens and 150 completion tokens; regex and programmatic
+scorers are not separated, so the figure can overstate spend. An empty
+evaluation has no estimate. If the resolved model is absent from that table,
+the report marks pricing `unavailable` with reason `unknown_model_pricing`
+and does not substitute another model's price or report `$0`. For live spend,
+rely on **Weave's built-in per-op cost tracking**: it records token counts ×
+model price automatically once `weave.init()` has run.
 
 ## Drift monitoring & reassessment cadence (`rai_toolkit.monitoring`)
 
