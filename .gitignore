@@ -18,8 +18,11 @@
 !/docs/
 !/docs/model_adapters.md
 !/docs/policy_packs.md
+!/docs/reproducible_evaluation.md
 !/docs/scorer_authoring.md
 !/docs/self_hosted.md
+!/docs/examples/
+!/docs/examples/**
 !/.github/
 !/.github/**
 
