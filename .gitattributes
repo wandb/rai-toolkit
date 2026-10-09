@@ -1,0 +1,5 @@
+# Normalize line endings across the repo. Force LF for Python sources and JSON, so a CRLF
+# checkout cannot change the bytes a fixture's SHA-256 is taken over.
+* text=auto
+*.py text eol=lf
+*.json text eol=lf

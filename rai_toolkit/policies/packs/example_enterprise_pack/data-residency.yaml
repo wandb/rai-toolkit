@@ -1,0 +1,10 @@
+- name: no-external-data-references
+  description: "Outputs must not direct users to send data to external/unapproved systems."
+  severity: high
+  trigger:
+    output_contains: [upload to, send to, paste into]
+    output_missing: [approved, internal]
+  frameworks: [Internal-Gov-Standard]
+  remediation: >
+    Constrain the system prompt to approved internal destinations and
+    add a policy check before release.

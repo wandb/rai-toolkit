@@ -1,0 +1,10 @@
+# Policy pack manifest. A pack is a versioned directory of policies
+# owned by one team and loaded as a unit via --policies-dir.
+name: example-enterprise-pack
+version: 1.0.0
+owner: governance-team@example.com
+description: >
+  Example of an organization-specific policy pack: internal governance,
+  compliance, and approval requirements run alongside the built-in
+  framework mappings (NIST AI RMF, EU AI Act, MIT AI Risk).
+frameworks: [Internal-Gov-Standard, EU-AI-Act-Art-15, NIST-AI-RMF-MANAGE]

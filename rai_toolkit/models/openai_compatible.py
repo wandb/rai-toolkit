@@ -1,0 +1,151 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: rai-toolkit
+
+"""OpenAI-compatible model adapter.
+
+Lets the RAI team point the toolkit at any service that speaks the OpenAI
+chat-completions protocol: the public OpenAI API, Azure, vLLM, Ollama,
+LiteLLM proxies, internal corporate proxies, anything. The reviewer
+doesn't have to clone the app team's repo or load a Python class. They
+paste a URL, a model name, and an API key.
+
+Use ``rai_toolkit.models.openai_compatible:from_args`` to build one
+from a single dict (the Streamlit intake form does this).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from typing import Any
+
+from openai import AsyncOpenAI
+
+from rai_toolkit.models._prompting import build_prompt_parts
+from rai_toolkit.models.base import (
+    BaseModel,
+    ModelResponse,
+    _reject_unsupported_call_options,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _coerce_max_tokens(value: Any) -> int:
+    """Validate the strict portable ``max_tokens`` call-time form."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"max_tokens must be a positive integer, got {value!r}")
+    return value
+
+
+class OpenAICompatibleModel(BaseModel):
+    """A ``BaseModel`` backed by any OpenAI-compatible chat endpoint.
+
+    Args:
+        model: Model identifier on the target service (``gpt-4o-mini``,
+            ``llama3:8b``, ``meta-llama/Llama-3-8B-Instruct``, etc.).
+        base_url: Optional override for the OpenAI client. Set this to
+            point at Azure / vLLM / Ollama / LiteLLM. Leave ``None`` for
+            the public OpenAI API.
+        api_key: API key. Falls back to ``OPENAI_API_KEY`` env var if
+            unset. Many local stacks accept any non-empty string.
+        system_prompt: Optional trusted system instructions prepended to every
+            call.
+            This is how a triage-assistant or RAG-style app wires its
+            system instructions while still being a generic adapter.
+        temperature: Default 0 for reproducibility. Override per-call via
+            ``predict(..., temperature=...)``.
+        name: Display name shown in reports / logs. Defaults to the model
+            id.
+    """
+
+    def __init__(
+        self,
+        model: str,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        system_prompt: str | None = None,
+        temperature: float = 0.0,
+        name: str | None = None,
+    ) -> None:
+        super().__init__(name=name or model)
+        self.model = model
+        self.base_url = base_url
+        self.system_prompt = system_prompt
+        self.temperature = temperature
+
+        client_kwargs: dict[str, Any] = {}
+        if api_key is not None:
+            client_kwargs["api_key"] = api_key
+        elif not os.environ.get("OPENAI_API_KEY"):
+            # Local stacks like Ollama/vLLM don't care; satisfy the SDK.
+            client_kwargs["api_key"] = "not-used"
+        if base_url is not None:
+            client_kwargs["base_url"] = base_url
+        self._client = AsyncOpenAI(**client_kwargs)
+
+    async def predict(
+        self,
+        input_text: str,
+        context: str = "",
+        **kwargs: Any,
+    ) -> ModelResponse:
+        """Run inference through the configured chat-completions endpoint.
+
+        ``temperature`` and a positive integer ``max_tokens`` are the only
+        supported per-call overrides. Unknown options fail before a provider
+        request is built, rather than being silently discarded.
+
+        Retrieved context is serialized with the input as lower-trust user data.
+        Raw context never uses the privileged ``system`` role. A trusted
+        interpretation policy is added to that role only when context is present.
+        """
+        _reject_unsupported_call_options(
+            type(self).__name__, kwargs, {"temperature", "max_tokens"}
+        )
+        request_params: dict[str, Any] = {
+            "model": self.model,
+            "messages": [],
+            "temperature": kwargs.get("temperature", self.temperature),
+        }
+        if "max_tokens" in kwargs:
+            request_params["max_tokens"] = _coerce_max_tokens(kwargs["max_tokens"])
+
+        system_prompt, user_message = build_prompt_parts(
+            self.system_prompt,
+            input_text,
+            context,
+        )
+        messages: list[dict[str, str]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": user_message})
+        request_params["messages"] = messages
+
+        completion = await self._client.chat.completions.create(**request_params)
+        choice = completion.choices[0]
+        usage = getattr(completion, "usage", None)
+        return ModelResponse(
+            output=choice.message.content or "",
+            metadata={
+                "model": self.model,
+                "base_url": self.base_url,
+                "finish_reason": choice.finish_reason,
+                "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                "completion_tokens": getattr(usage, "completion_tokens", None),
+                "total_tokens": getattr(usage, "total_tokens", None),
+            },
+        )
+
+
+def from_args(args: dict[str, Any]) -> OpenAICompatibleModel:
+    """Build an adapter from a flat dict (used by the Streamlit intake)."""
+    return OpenAICompatibleModel(
+        model=args["model"],
+        base_url=args.get("base_url") or None,
+        api_key=args.get("api_key") or None,
+        system_prompt=args.get("system_prompt") or None,
+        temperature=float(args.get("temperature", 0.0)),
+        name=args.get("name") or None,
+    )

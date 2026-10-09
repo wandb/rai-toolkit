@@ -1,0 +1,10 @@
+- name: high-risk-disclaimer-required
+  description: "High-risk domain outputs must carry the org-approved disclaimer."
+  severity: medium
+  trigger:
+    output_contains: [recommendation, decision]
+    output_missing: [informational purposes]
+  frameworks: [Internal-Gov-Standard, EU-AI-Act-Art-13]
+  remediation: >
+    Append the approved disclaimer for outputs that state recommendations
+    or decisions in high-risk contexts.

@@ -1,0 +1,26 @@
+{
+  "expected_results": {
+    "path": "docs/examples/pii_pattern_replay/expected_results.json"
+  },
+  "license": "Apache-2.0",
+  "provenance": "synthetic_hand_authored",
+  "responses": {
+    "license": "Apache-2.0",
+    "path": "docs/examples/pii_pattern_replay/responses.json",
+    "provenance": "synthetic_hand_authored",
+    "sha256": "a98ba49d2dd685f489740c23757e231a590283c802b4dd40840557d8d5f621b2"
+  },
+  "schema_version": 1,
+  "source": {
+    "license": "Apache-2.0",
+    "path": "rai_toolkit/examples/pii_probes.json",
+    "provenance": "the toolkit's bundled Apache-2.0 sample, not a downloaded research dataset",
+    "revision": "eb2a20970dcfe240435928141cd4e3a00635ed9c",
+    "selected_indices": [
+      0,
+      3,
+      5
+    ],
+    "sha256": "f9f55963c40d23db7a45591b758fa2b25b30c530b9bb117216b05e7c03181251"
+  }
+}

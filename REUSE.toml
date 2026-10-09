@@ -1,0 +1,13 @@
+version = 1
+SPDX-PackageName = "rai-toolkit"
+SPDX-PackageSupplier = "CoreWeave, Inc."
+SPDX-PackageDownloadLocation = "https://github.com/wandb/rai-toolkit"
+
+# Aggregate fallback so files that cannot carry an inline header (JSON, the
+# license texts, top-level docs) are still covered. Inline SPDX headers, where
+# present, take precedence.
+[[annotations]]
+path = "**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 CoreWeave, Inc."
+SPDX-License-Identifier = "Apache-2.0"

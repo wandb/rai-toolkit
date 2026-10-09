@@ -1,0 +1,71 @@
+# Publish allowlist. The first public Git push should contain only the
+# package source and release metadata.
+*
+
+!/.gitignore
+!/README.md
+!/NOTICE
+!/LICENSE
+!/LICENSES/
+!/LICENSES/**
+!/REUSE.toml
+!/.reuse/
+!/.reuse/**
+!/pyproject.toml
+!/CONTRIBUTING.md
+!/CONTRIBUTORS.md
+!/CODE_OF_CONDUCT.md
+!/docs/
+!/docs/model_adapters.md
+!/docs/policy_packs.md
+!/docs/reproducible_evaluation.md
+!/docs/scorer_authoring.md
+!/docs/self_hosted.md
+!/docs/examples/
+!/docs/examples/**
+!/.github/
+!/.github/**
+
+# Toolkit source packages included by pyproject.toml.
+!/rai_toolkit/
+!/rai_toolkit/**
+!/integrations/
+!/integrations/**
+
+# Test sources are published with the repository but excluded from wheels.
+!/tests/
+!/tests/**
+
+# Reference reviewer UI and example apps (see README).
+!/demo/
+!/demo/**
+!/demo_app/
+!/demo_app/**
+
+# Never publish generated/local files inside otherwise-allowed package dirs.
+**/__pycache__/
+**/*.py[cod]
+**/.DS_Store
+*.egg-info/
+build/
+dist/
+
+# Local secrets and machine state.
+.env
+.env.*
+.venv/
+venv/
+env/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/
+*.swp
+*.swo
+.cache/
+.streamlit/secrets.toml

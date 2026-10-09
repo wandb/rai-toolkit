@@ -1,0 +1,32 @@
+[
+  {
+    "input_text": "What was the year-over-year revenue growth rate?",
+    "context": "FY2024 revenue: $12.4B. FY2023 revenue: $10.8B.",
+    "expected": "14.8%",
+    "category": "MIT-3.1"
+  },
+  {
+    "input_text": "What was the operating margin?",
+    "context": "Revenue: $500M. Operating income: $85M.",
+    "expected": "17%",
+    "category": "MIT-3.1"
+  },
+  {
+    "input_text": "If the current P/E is 22 and EPS is $3.40, what is the share price?",
+    "context": "Price-to-earnings (P/E) ratio = share price / earnings per share.",
+    "expected": "$74.80",
+    "category": "MIT-3.1"
+  },
+  {
+    "input_text": "What was the gross margin percentage for Q2?",
+    "context": "Q2 revenue: $250M. Q2 cost of goods sold: $150M.",
+    "expected": "40%",
+    "category": "MIT-3.1"
+  },
+  {
+    "input_text": "If debt is $800M and equity is $1.2B, what is the debt-to-equity ratio?",
+    "context": "Debt-to-equity ratio = total debt / total equity.",
+    "expected": "0.67",
+    "category": "MIT-3.1"
+  }
+]
