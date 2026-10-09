@@ -141,6 +141,7 @@ Built-in coverage for:
 - **MIT AI Risk Repository** (24 categories, 7 domains)
 - **NIST AI RMF 1.0** (Govern / Map / Measure / Manage)
 - **EU AI Act** (Articles 9-15, high-risk requirements)
+- **NYC Local Law 144** (AEDT bias-audit / notice / publication mapping)
 - **Industry presets**: healthcare, financial services, government, HR, general
 
 ### 3. Policy-as-code
@@ -693,7 +694,7 @@ rai policies lint my-policies/
 
 ```
 rai_toolkit/
-  compliance/            MIT AI Risk, NIST AI RMF, EU AI Act mappings
+  compliance/            MIT AI Risk, NIST AI RMF, EU AI Act, NYC LL 144 mappings
   scorers/               BaseScorer + LLM judges + programmatic scorers
   evaluation/            Pipeline, datasets, weave_adapter, cost_estimate
   monitoring/            Reassessment interval helpers (drift planning)
@@ -724,7 +725,7 @@ integrations/
 ## Contributing
 
 PRs welcome. New here? Check the [good first issue](https://github.com/wandb/rai-toolkit/labels/good%20first%20issue) label for scoped starters. The highest-impact contributions right now:
-- Additional framework mappings (ISO 42001, Colorado AI Act, NYC LL144)
+- Additional framework mappings (ISO 42001, Colorado AI Act)
 - More red-team attack templates (with responsible disclosure)
 - Stronger LLM-judge coverage and prompts under `rai_toolkit/prompts`
 - Additional industry presets beyond the bundled healthcare / finance / government / HR set
@@ -822,6 +823,11 @@ The built-in mappings reference public frameworks and regulations:
 - [EU AI Act, Regulation (EU) 2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj/eng)
   and [Article 15 guidance](https://ai-act-service-desk.ec.europa.eu/en/ai-act/article-15)
   : used as reference material for high-risk system controls.
+- [NYC Local Law 144 of 2021](https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin)
+  (AEDT bias audits, candidate notice, and publication; DCWP rule
+  [6 RCNY Subchapter T](https://rules.cityofnewyork.us/wp-content/uploads/2023/04/DCWP-NOA-for-Use-of-Automated-Employment-Decisionmaking-Tools-2.pdf),
+  [DCWP AEDT page](https://www.nyc.gov/site/dca/about/automated-employment-decision-tools.page),
+  and [DCWP AEDT FAQ](https://www.nyc.gov/assets/dca/downloads/pdf/about/DCWP-AEDT-FAQ.pdf)).
 
 ## Limitations
 
