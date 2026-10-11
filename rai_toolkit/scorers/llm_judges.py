@@ -14,6 +14,7 @@ import json
 import logging
 import math
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from openai import OpenAI
@@ -92,6 +93,53 @@ def _sanitize_judge_value(value: Any) -> Any:
     return value
 
 
+# Documented stand-ins for an absent row value. They keep the text the judge
+# saw before row data moved into a JSON payload, so a scorer's own prose
+# ("If the Context is empty or \"(no context provided)\"") still describes
+# what the judge is shown.
+_NO_INPUT = "(no input provided)"
+_NO_CONTEXT = "(no context provided)"
+_NO_OUTPUT = "(no response)"
+
+
+def build_judge_messages(
+    prompts: Mapping[str, str],
+    payload: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Return ``(system_message, user_message)`` for one LLM judge call.
+
+    ``prompts["system"]`` (the persona) and ``prompts["instructions"]`` (the
+    grading rules and the response schema) are written by the scorer, so both
+    make up the trusted system message. ``payload`` holds row-controlled values
+    and is serialized as a single JSON object that becomes the entire user
+    message.
+
+    Nothing from ``payload`` is ever interpolated into the system message, so
+    evaluated text cannot add, reorder, or replace a grading rule, a
+    response-format requirement, a retrieved chunk, or a rubric criterion: it
+    can only be the value of the field it was placed in.
+
+    Serialization is strict and deterministic: field order follows
+    ``payload``, non-ASCII characters stay as Unicode, and non-finite floats
+    are replaced with their string form before dumping, so the result is
+    always parseable by a strict JSON reader. Quotes, backslashes, line
+    breaks, Markdown headings, JSON-like object boundaries and XML-like tags
+    inside a value round-trip unchanged through ``json.loads``.
+    """
+    system_message = "\n\n".join(
+        text
+        for text in (prompts.get("system", ""), prompts.get("instructions", ""))
+        if text
+    )
+    user_message = json.dumps(
+        _sanitize_judge_value(dict(payload)),
+        ensure_ascii=False,
+        indent=2,
+        allow_nan=False,
+    )
+    return system_message, user_message
+
+
 class LLMJudgeScorer(BaseScorer):
     """Base class for LLM-as-a-Judge scorers.
 
@@ -110,6 +158,12 @@ class LLMJudgeScorer(BaseScorer):
 
     name: str = "LLMJudgeScorer"
     _judge_name: str = ""  # Override in subclasses to link to JUDGE_PROMPTS
+
+    # Row fields this judge's instructions read, in serialization order.
+    # Scorers that grade retrieved context override this; scorers with their
+    # own ``score()`` build the payload themselves and route it through
+    # ``_judge_messages``.
+    _payload_fields: tuple[str, ...] = ("input", "output")
 
     def __init__(
         self,
@@ -144,14 +198,16 @@ class LLMJudgeScorer(BaseScorer):
             )
         return prompts
 
-    def _format_prompt(self, output: str, input: str = "", context: str = "") -> str:
-        """Format the judge prompt template with the evaluation data."""
-        prompts = self._get_prompts()
-        return prompts["template"].format(
-            output=output,
-            input=input or "(no input provided)",
-            context=context or "(no context provided)",
-        )
+    def _judge_messages(self, payload: Mapping[str, Any]) -> tuple[str, str]:
+        """Build ``(system_message, user_message)`` for this judge.
+
+        The system message carries only scorer-authored content. ``payload``
+        holds the row's values and is serialized as the whole user message.
+        Every scorer in this module routes its judge call through here, so no
+        alternative prompt-construction path can reintroduce interpolation of
+        row data into trusted instructions.
+        """
+        return build_judge_messages(self._get_prompts(), payload)
 
     @_tracing.traced(
         name="rai.judge",
@@ -242,9 +298,14 @@ class LLMJudgeScorer(BaseScorer):
         Returns:
             ScorerResult with normalized 0-1 score.
         """
-        prompts = self._get_prompts()
-        user_prompt = self._format_prompt(output=output, input=input, context=context)
-        result = self._call_judge(prompts["system"], user_prompt)
+        values = {
+            "input": input or _NO_INPUT,
+            "context": context or _NO_CONTEXT,
+            "output": output,
+        }
+        payload = {name: values[name] for name in self._payload_fields}
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
 
         raw_score = float(result.get("score", 0))
         if not math.isfinite(raw_score):
@@ -295,6 +356,7 @@ class FactualityJudge(LLMJudgeScorer):
     description = "Checks factual accuracy against provided context, detects hallucinations"
     category = "MIT-3.1"
     _judge_name = "FactualityJudge"
+    _payload_fields = ("input", "context", "output")
 
     def score(
         self,
@@ -458,9 +520,13 @@ class GroundednessScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        prompts = self._get_prompts()
-        user_prompt = self._format_prompt(output=output, input=input, context=context)
-        result = self._call_judge(prompts["system"], user_prompt)
+        payload = {
+            "input": input or _NO_INPUT,
+            "context": context or _NO_CONTEXT,
+            "output": output,
+        }
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
         raw_score = float(result.get("score", 0))
         if not math.isfinite(raw_score):
             # Evidence spans stay empty: an un-assessed row claims no
@@ -547,37 +613,22 @@ def _split_context_chunks(context: str) -> list[str]:
     return [c for c in text.split("---") if c.strip()]
 
 
-def _escape_chunk_content(chunk: str) -> str:
-    """Neutralize envelope syntax inside chunk content.
+def _context_chunk_entries(chunks: Sequence[str]) -> list[dict[str, Any]]:
+    """Represent the parsed chunk sequence as ordered structured entries.
 
-    A retrieved chunk may contain literal ``<chunk ...>`` or ``</chunk>``
-    text. Unescaped, it closes the real envelope and forges another indexed
-    one, so a verdict reply grades the forged section instead of the real
-    chunk. Standard XML escaping (ampersand first) makes every such marker
-    inert: the judge still reads the passage, but no bare ``<`` can open a
-    tag, so the prompt contains exactly one envelope per chunk.
+    The judge must be shown exactly the chunk sequence the scorer grades:
+    anything the parser dropped (e.g. text before the first labelled block)
+    must not reach the judge, or the judge's chunk indexes would shift
+    relative to the chunks the scorer counted.
+
+    Each entry pairs the chunk's real index with its original, unescaped
+    content. JSON already delimits every value, so a chunk carrying
+    delimiter-shaped or envelope-shaped text is still exactly one entry: it
+    can neither close its own value nor open another chunk. No escaping
+    scheme is applied, so the text the judge reads is the text the evidence
+    checks are made against.
     """
-    return chunk.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _render_context_chunks(chunks: list[str]) -> str:
-    """Render the parsed chunk sequence into the envelopes the judge sees.
-
-    The judge prompt must be built from the exact chunk sequence the scorer
-    grades: anything the parser dropped (e.g. text before the first labelled
-    block) must not reach the judge, or the judge's chunk indexes would shift
-    relative to the chunks the scorer counted. Each chunk is wrapped in a
-    numbered ``<chunk index="N">`` envelope instead of being joined with
-    ``---``: the delimiter is valid content under either contract, so a chunk
-    containing it would otherwise render as extra delimiter-shaped sections
-    a third verdict could grade. Chunk content is XML-escaped first, so
-    envelope-shaped text inside a chunk can neither close the real envelope
-    nor forge another one.
-    """
-    return "\n\n".join(
-        f'<chunk index="{position}">\n{_escape_chunk_content(chunk)}\n</chunk>'
-        for position, chunk in enumerate(chunks)
-    )
+    return [{"index": index, "content": chunk} for index, chunk in enumerate(chunks)]
 
 
 def _xml_unescape_prompt_text(text: str) -> str:
@@ -620,13 +671,25 @@ def _context_span_in_chunks(span: str, chunks: list[str]) -> tuple[str, str]:
     appears in the matching original chunk, and that chunk so the caller can
     tell scaffolding from the chunk's own label -- or ``("", "")`` when no
     chunk contains it. Matching against a single original chunk (rather than
-    the rendered envelope sequence) keeps evidence anchored to what was
-    actually retrieved and cannot be satisfied by envelope syntax.
+    the serialized payload) keeps evidence anchored to what was actually
+    retrieved and cannot be satisfied by payload syntax.
     """
     for chunk in chunks:
         verified = _verbatim_span(span, chunk)
         if verified:
             return verified, chunk
+    # Chunk content now reaches the judge verbatim, but a judge may still
+    # quote an XML-escaped form (``R&amp;D`` for ``R&D``) the way the old
+    # envelope view showed it. Unescaping cannot produce text the quote did
+    # not already contain, and verification below still requires an exact
+    # substring of a real chunk, so accepting the unescaped form as a
+    # fallback keeps old quotes verifiable without loosening the check.
+    unescaped = _xml_unescape_prompt_text(span)
+    if unescaped != span:
+        for chunk in chunks:
+            verified = _verbatim_span(unescaped, chunk)
+            if verified:
+                return verified, chunk
     return "", ""
 
 
@@ -705,11 +768,12 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
     Designed for RAG retrieval quality evaluation. Chunks follow the toolkit's
     context contract: line-start ``[source-id] text`` blocks, the format the
     reference RAG apps emit, with literal ``---`` delimiters accepted as a
-    fallback for unlabeled contexts. The judge reads the chunks re-rendered
-    into numbered ``<chunk index="N">`` envelopes, so a delimiter inside a
-    chunk can never read as a boundary. The judge assigns a per-chunk relevance
-    verdict and the scorer derives the overall 0-3 score from the validated
-    verdicts, then normalizes to 0-1.
+    fallback for unlabeled contexts. The judge reads the chunks as an ordered
+    JSON array of ``{"index": N, "content": ...}`` entries in the user
+    message, so a delimiter or envelope marker inside a chunk can never read
+    as a boundary. The judge assigns a per-chunk relevance verdict and the
+    scorer derives the overall 0-3 score from the validated verdicts, then
+    normalizes to 0-1.
 
     The chunk count is taken from the context itself, not from the judge.
     Verdicts that are not dicts, carry a non-integer ``chunk_index``, or an
@@ -728,9 +792,9 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
     explanation is derived from them too (``details["judge_explanation"]``
     keeps the judge's prose for audit).
 
-    The judge prompt is rebuilt from the exact parsed chunk sequence, so text
-    before the first source label (caller-supplied context, not a retrieved
-    chunk) is neither counted nor shown to the judge.
+    The payload sent to the judge is built from the exact parsed chunk
+    sequence, so text before the first source label (caller-supplied context,
+    not a retrieved chunk) is neither counted nor shown to the judge.
 
     Rows without retrieved context or with a blank query return
     ``assessed=False``. Refusal-shaped rows are still assessed: this scorer
@@ -790,16 +854,17 @@ class RetrievalRelevanceScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        prompts = self._get_prompts()
-        # Rebuild the prompt from the exact parsed chunk sequence: text the
-        # parser dropped (e.g. caller context before the first label) must not
-        # reach the judge, or the judge's indexes would shift relative to the
-        # chunks the scorer counts.
-        parsed_context = _render_context_chunks(chunks)
-        user_prompt = self._format_prompt(
-            output=output, input=input, context=parsed_context
-        )
-        result = self._call_judge(prompts["system"], user_prompt)
+        # Serialize the exact parsed chunk sequence: text the parser dropped
+        # (e.g. caller context before the first label) must not reach the
+        # judge, or the judge's indexes would shift relative to the chunks
+        # the scorer counts. The retrieved set is sent only as "chunks", so
+        # discarded preamble cannot come back as a raw context field.
+        payload = {
+            "input": input or _NO_INPUT,
+            "chunks": _context_chunk_entries(chunks),
+        }
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
         if not isinstance(result, dict):
             # Valid JSON with a non-object top level (null, a list, a string,
             # a number) is not a judge reply: return a controlled un-assessed
@@ -1032,10 +1097,10 @@ class ContextPrecisionScorer(LLMJudgeScorer):
     chunk on its own and therefore cannot see redundancy across chunks.
 
     Chunks follow the toolkit's context contract (see
-    ``_split_context_chunks``) and the judge reads them re-rendered into
-    numbered ``<chunk index="N">`` envelopes. The judge returns a binary
-    ``needed`` / ``not_needed`` verdict per chunk, and the scorer derives the
-    score as ``needed / total`` from the validated verdicts. The judge's own
+    ``_split_context_chunks``) and the judge reads them as an ordered JSON
+    array of ``{"index": N, "content": ...}`` entries. The judge returns a
+    binary ``needed`` / ``not_needed`` verdict per chunk, and the scorer
+    derives the score as ``needed / total`` from the validated verdicts. The judge's own
     overall score is advisory and recorded in ``details["judge_score"]``.
 
     When two chunks carry the same information, "another chunk supplies it"
@@ -1120,14 +1185,14 @@ class ContextPrecisionScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        prompts = self._get_prompts()
-        # Rebuild the prompt from the exact parsed chunk sequence so the judge's
-        # indexes line up with the chunks the scorer counts.
-        parsed_context = _render_context_chunks(chunks)
-        user_prompt = self._format_prompt(
-            output=output, input=input, context=parsed_context
-        )
-        result = self._call_judge(prompts["system"], user_prompt)
+        # Serialize the exact parsed chunk sequence so the judge's indexes
+        # line up with the chunks the scorer counts.
+        payload = {
+            "input": input or _NO_INPUT,
+            "chunks": _context_chunk_entries(chunks),
+        }
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
         if not isinstance(result, dict):
             return ScorerResult(
                 score=0.0,
@@ -1339,12 +1404,13 @@ class ContextRecallScorer(LLMJudgeScorer):
       so a judge cannot invent information the reference does not contain.
     - A piece whose ``supported`` flag is not a boolean is discarded.
     - A ``supported`` piece is verified against the original chunk content,
-      not the XML-escaped envelope view the judge read: the quoted span is
-      unescaped and matched back to a retrieved chunk, and the span stored in
-      the result is the original chunk text. A span that only repeats the
-      envelope marker or the chunk's source label is not evidence, and a
-      support claim that cannot be verified this way is counted as not
-      supported rather than trusted.
+      not the serialized payload the judge read: the quoted span is matched
+      back to a retrieved chunk (an XML-escaped quote is unescaped first, for
+      judges that still quote that way), and the span stored in the result is
+      the original chunk text. A span that only repeats an envelope marker or
+      the chunk's source label is not evidence, and a support claim that
+      cannot be verified this way is counted as not supported rather than
+      trusted.
     - Each piece is bound to exactly one occurrence of its reference span: the
       earliest occurrence no earlier piece has claimed. A span the reference
       repeats must be listed once per occurrence -- one piece can never cover
@@ -1450,17 +1516,17 @@ class ContextRecallScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        prompts = self._get_prompts()
-        # The judge reads the same rendered chunk envelopes the scorer counts,
-        # and the reference answer verbatim: both anchors are checked against
-        # exactly what the judge was shown.
-        parsed_context = _render_context_chunks(chunks)
-        user_prompt = prompts["template"].format(
-            input=input,
-            context=parsed_context,
-            expected=expected,
-        )
-        result = self._call_judge(prompts["system"], user_prompt)
+        # The judge reads the same chunk sequence the scorer counts, and the
+        # reference answer verbatim: both anchors are checked against exactly
+        # what the judge was shown. The reference answer is a row value, so it
+        # travels in the payload rather than in the trusted instructions.
+        payload = {
+            "input": input,
+            "chunks": _context_chunk_entries(chunks),
+            "reference_answer": expected,
+        }
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
         if not isinstance(result, dict):
             return ScorerResult(
                 score=0.0,
@@ -1532,15 +1598,13 @@ class ContextRecallScorer(LLMJudgeScorer):
                 if supported:
                     raw_context_span = item.get("context_span")
                     if isinstance(raw_context_span, str):
-                        # The judge quotes from the XML-escaped envelope view,
-                        # so the quote is unescaped and verified against the
-                        # original chunk content -- never against the rendered
-                        # prompt, where escaping artifacts and envelope syntax
-                        # would verify as false evidence. The stored span is
-                        # the original chunk text, not the escaped quote.
-                        unescaped_span = _xml_unescape_prompt_text(raw_context_span)
+                        # The quote is verified against the original chunk
+                        # content -- never against the serialized payload,
+                        # where field syntax would verify as false evidence.
+                        # The stored span is the original chunk text, not the
+                        # quote as it arrived.
                         context_span, matched_chunk = _context_span_in_chunks(
-                            unescaped_span, chunks
+                            raw_context_span, chunks
                         )
                         if context_span and _is_envelope_or_label_only(
                             context_span, matched_chunk
@@ -1861,18 +1925,20 @@ class RubricScorer(LLMJudgeScorer):
                 assessed=False,
             )
 
-        prompts = self._get_prompts()
-        criteria_block = "\n".join(
-            f"  [{i}] (points={c['points']}) {c['criterion']}"
+        # Row-level criteria are structured entries, so marker-like text
+        # inside one criterion cannot open another: the judge grades exactly
+        # the indexes this list contains.
+        criteria = [
+            {"index": i, "points": c["points"], "criterion": c["criterion"]}
             for i, c in enumerate(clean_rubrics)
-        )
-        user_prompt = prompts["template"].format(
-            output=output or "(no response)",
-            input=input or "(no input provided)",
-            criteria_block=criteria_block,
-        )
-
-        raw = self._call_judge(prompts["system"], user_prompt)
+        ]
+        payload = {
+            "input": input or _NO_INPUT,
+            "output": output or _NO_OUTPUT,
+            "criteria": criteria,
+        }
+        system_message, user_message = self._judge_messages(payload)
+        raw = self._call_judge(system_message, user_message)
         verdicts_raw = raw.get("verdicts") or []
         verdicts_by_index: dict[int, dict[str, Any]] = {}
         for v in verdicts_raw:

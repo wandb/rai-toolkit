@@ -260,9 +260,11 @@ authoritative, validated against a rubric, or only advisory.
 
 ## Keep retrieval denominators tied to the input
 
-The three retrieval scorers reuse the chunk parsing and envelope rendering in
+The three retrieval scorers reuse the chunk parsing and payload construction in
 [`llm_judges.py`](../rai_toolkit/scorers/llm_judges.py). Their private helpers are
-implementation references, not a stable public parser API.
+implementation references, not a stable public parser API. The judge receives the
+parsed chunks as an ordered array of `{index, content}` entries in the JSON user
+message, so the sequence it grades is exactly the sequence the scorer counted.
 
 - `RetrievalRelevanceScorer` grades each parsed chunk independently and derives
   its aggregate from validated per-chunk verdicts.

@@ -560,9 +560,17 @@ persistence under `rai_workspace/`, and example `demo_app/` model references.
 
 ## Judge prompts (`rai_toolkit.prompts`)
 
-LLM-as-judge scorers load prompt templates from `rai_toolkit/prompts/`
+LLM-as-judge scorers load prompt text from `rai_toolkit/prompts/`
 (`judge_prompts.py`). Extend or override prompts there when tuning judges for
 a domain without forking scorer code.
+
+Each judge ships scorer-authored `system` and `instructions` text. Both are
+trusted and are sent as the system message. Evaluated row values (user input,
+model output, retrieved context, reference answers, and row rubric criteria)
+are never interpolated into them: they travel as a single JSON object in the
+user message, built by one shared helper. Keep that split when adding or
+tuning a judge -- it is what stops evaluated text from reading as a
+peer-level grading instruction.
 
 Available judge scorers include `FactualityJudge`, `FairnessJudge`,
 `ContentSafetyJudge`, `PrivacyJudge`, `SecurityJudge`, `TransparencyJudge`,
