@@ -377,7 +377,7 @@ def test_precision_native_labelled_blocks_are_chunks() -> None:
     assert result.score == 0.5
 
 
-def test_precision_prompt_uses_envelopes_not_delimiters() -> None:
+def test_precision_prompt_uses_structured_chunks_not_delimiters() -> None:
     scorer = _precision_scorer(
         {
             "score": 3,
@@ -388,21 +388,22 @@ def test_precision_prompt_uses_envelopes_not_delimiters() -> None:
         }
     )
 
+    context = "[doc-1] Revenue was $10M --- audited figure\n\n[doc-2] Weather only"
     scorer.score(
         "Revenue was $10M.",
         input="What was the revenue?",
-        context="[doc-1] Revenue was $10M --- audited figure\n\n[doc-2] Weather only",
+        context=context,
     )
 
-    judge_prompt = scorer._call_judge.call_args[0][1]
-    # Count real envelope openings only: the template prose also mentions
-    # <chunk index="N"> with a literal N. The delimiter inside the labelled
-    # first chunk cannot read as a boundary, so it stays one envelope.
-    assert len(re.findall(r'<chunk index="\d+">', judge_prompt)) == 2
-    assert (
-        '<chunk index="0">\n[doc-1] Revenue was $10M --- audited figure\n</chunk>'
-        in judge_prompt
+    payload = json.loads(scorer._call_judge.call_args[0][1])
+    # The judge reads an ordered array of indexed chunk entries, so the
+    # delimiter inside the labelled first chunk cannot read as a boundary:
+    # it stays one chunk with one index.
+    assert [chunk["index"] for chunk in payload["chunks"]] == [0, 1]
+    assert payload["chunks"][0]["content"] == (
+        "[doc-1] Revenue was $10M --- audited figure"
     )
+    assert payload["chunks"][1]["content"] == "[doc-2] Weather only"
 
 
 # --------------------------------------------------------------------------
@@ -1550,10 +1551,12 @@ def test_recall_parse_failure_reply_is_strict_json_serializable() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_precision_template_json_example_is_parseable() -> None:
-    template = JUDGE_PROMPTS["ContextPrecisionScorer"]["template"]
-    rendered = template.format(output="o", input="i", context="c")
-    block = rendered.split("Respond in JSON format:", 1)[1]
+def test_precision_instructions_json_example_is_parseable() -> None:
+    # The response schema the judge must imitate has to be real JSON. The
+    # instructions are no longer run through .format(), so the example is
+    # literal rather than a doubled-brace rendering of one.
+    template = JUDGE_PROMPTS["ContextPrecisionScorer"]["instructions"]
+    block = template.split("Respond in JSON format:", 1)[1]
 
     json_like = (
         block.replace("<0-3>", "2")
@@ -1570,10 +1573,9 @@ def test_precision_template_json_example_is_parseable() -> None:
     assert payload["chunk_verdicts"][0]["needed"] == "needed"
 
 
-def test_recall_template_json_example_is_parseable() -> None:
-    template = JUDGE_PROMPTS["ContextRecallScorer"]["template"]
-    rendered = template.format(input="i", context="c", expected="e")
-    block = rendered.split("Respond in JSON format:", 1)[1]
+def test_recall_instructions_json_example_is_parseable() -> None:
+    template = JUDGE_PROMPTS["ContextRecallScorer"]["instructions"]
+    block = template.split("Respond in JSON format:", 1)[1]
 
     json_like = (
         block.replace("<0-3>", "2")
@@ -1592,7 +1594,7 @@ def test_recall_template_json_example_is_parseable() -> None:
     assert payload["reference_items"][0]["context_span"] == "ctx"
 
 
-def test_recall_template_requires_boolean_supported_field() -> None:
+def test_recall_instructions_require_boolean_supported_field() -> None:
     # The prose and the JSON schema must agree: "supported" is a JSON Boolean,
     # so the old string labels must not appear as verdict values anywhere in
     # the prompt (the JSON example's "supported" key is the field name, not a
@@ -1601,10 +1603,10 @@ def test_recall_template_requires_boolean_supported_field() -> None:
     for text in recall.values():
         assert '"not_supported"' not in text
         assert '- "supported"' not in text
-    assert "Boolean" in recall["template"]
+    assert "Boolean" in recall["instructions"]
 
 
-def test_precision_template_defines_duplicate_chunk_ordering() -> None:
+def test_precision_prompt_defines_duplicate_chunk_ordering() -> None:
     # "Another chunk supplies the same information" applies symmetrically to
     # identical chunks, so the prompt must fix the tie-break: the
     # lowest-index chunk is needed, later duplicates are not.
