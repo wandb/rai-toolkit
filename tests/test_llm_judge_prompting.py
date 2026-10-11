@@ -45,8 +45,11 @@ from rai_toolkit.scorers.llm_judges import (
     build_judge_messages,
 )
 
-# The 12 judge scorers named in the issue, in the order it lists them.
-ISSUE_62_SCORERS = (
+# The 12 scorers named in the issue: the seven Judge classes and the five
+# specialized scorers. The two groups are disjoint -- FactualityJudge is one
+# of the seven even though it overrides score(), so it is not counted in the
+# specialized group.
+ISSUE_62_JUDGE_CLASSES = (
     "FactualityJudge",
     "FairnessJudge",
     "ContentSafetyJudge",
@@ -54,12 +57,17 @@ ISSUE_62_SCORERS = (
     "SecurityJudge",
     "TransparencyJudge",
     "ExplainabilityJudge",
+)
+
+ISSUE_62_SPECIALIZED_SCORERS = (
     "GroundednessScorer",
     "RetrievalRelevanceScorer",
     "ContextPrecisionScorer",
     "ContextRecallScorer",
     "RubricScorer",
 )
+
+ISSUE_62_SCORERS = ISSUE_62_JUDGE_CLASSES + ISSUE_62_SPECIALIZED_SCORERS
 
 # A marker that appears only inside row values, never in scorer-authored text,
 # so "this row value is absent from the system message" is checkable directly.
@@ -240,8 +248,16 @@ def _cases() -> list[tuple[str, Any, dict[str, Any], dict[str, str], str]]:
 
 
 def test_case_matrix_covers_the_twelve_scorers_named_in_the_issue() -> None:
+    # Exactly the issue's scope: seven Judge classes plus five specialized
+    # scorers, with nothing counted in both groups.
+    assert len(ISSUE_62_JUDGE_CLASSES) == 7
+    assert len(ISSUE_62_SPECIALIZED_SCORERS) == 5
+    assert len(ISSUE_62_SCORERS) == 12
+    assert len(set(ISSUE_62_SCORERS)) == 12
+    assert not set(ISSUE_62_JUDGE_CLASSES) & set(ISSUE_62_SPECIALIZED_SCORERS)
+
     covered = [label for label, _cls, _kwargs, _fields, _kind in _cases()]
-    assert len(covered) == len(set(covered)) == len(ISSUE_62_SCORERS)
+    assert len(covered) == len(set(covered)) == 12
     assert set(covered) == set(ISSUE_62_SCORERS)
 
 
@@ -551,6 +567,58 @@ def test_build_judge_messages_serializes_deterministically() -> None:
     assert first == second
     assert first[0] == "S\n\nI"
     assert json.loads(first[1]) == payload
+
+
+@pytest.mark.parametrize(
+    "prompts",
+    [
+        {"system": "S"},                      # instructions missing
+        {"instructions": "I"},                # system missing
+        {"system": "S", "instructions": ""},  # instructions blank
+        {"system": "S", "instructions": "   \n"},
+        {"system": "", "instructions": "I"},  # system blank
+        {"system": None, "instructions": "I"},  # wrong type
+        {"system": "S", "instructions": 3},
+        {},                                   # nothing at all
+    ],
+)
+def test_missing_prompt_sections_fail_closed(prompts: dict[str, Any]) -> None:
+    # The system message is the only trusted half of a judge prompt. A blank
+    # section must never be silently assembled into one: the judge would be
+    # asked to grade with no rules, no scale and no response schema, and a
+    # plausible-looking score would hide it.
+    with pytest.raises(ValueError, match="no usable"):
+        build_judge_messages(prompts, {"input": "q", "output": "a"})
+
+
+def test_non_mapping_prompt_configuration_fails_closed() -> None:
+    with pytest.raises(ValueError, match="must be a mapping"):
+        build_judge_messages(["S", "I"], {"input": "q"})  # type: ignore[arg-type]
+
+
+def test_a_scorer_without_instructions_fails_closed(monkeypatch) -> None:
+    # The failure has to happen before _call_judge, and it has to name the
+    # judge so a broken custom entry is obvious.
+    monkeypatch.setitem(
+        JUDGE_PROMPTS, "FairnessJudge", {"system": "S", "instructions": "  "}
+    )
+    scorer = FairnessJudge(api_key="test")
+    called = Mock(return_value={"score": 3})
+    scorer._call_judge = called
+
+    with pytest.raises(ValueError, match="FairnessJudge"):
+        scorer.score("a response", input="a request")
+    called.assert_not_called()
+
+
+@pytest.mark.parametrize("label", ISSUE_62_SCORERS)
+def test_every_shipped_judge_defines_both_prompt_sections(label: str) -> None:
+    prompts = JUDGE_PROMPTS[label]
+    assert prompts["system"].strip()
+    assert prompts["instructions"].strip()
+    # The instructions describe the row's fields, so a judge cannot be left
+    # guessing which JSON payload it was handed.
+    assert "The user message is a single JSON object" in prompts["instructions"]
 
 
 def test_build_judge_messages_rejects_non_finite_numbers() -> None:
