@@ -102,6 +102,35 @@ _NO_CONTEXT = "(no context provided)"
 _NO_OUTPUT = "(no response)"
 
 
+def _require_prompt_section(prompts: Any, key: str, judge: str) -> str:
+    """Return a usable prompt section or fail closed.
+
+    The system message is the only trusted half of a judge prompt, so it is
+    never assembled from a missing or blank section. A judge with no
+    ``instructions`` would ask a model to grade with no rules, no scale, and
+    no response schema -- and a silently empty system message would hide that
+    behind a plausible-looking score. Both sections are therefore required to
+    be present, a string, and non-blank.
+    """
+    if not isinstance(prompts, Mapping):
+        # ValueError, not TypeError: this is a prompt-configuration error, matching
+        # how the rest of the toolkit reports a bad configuration value.
+        raise ValueError(  # noqa: TRY004
+            f"Judge prompt configuration for {judge} must be a mapping of "
+            f"prompt sections, got {type(prompts).__name__}."
+        )
+    value = prompts.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"Judge prompt configuration for {judge} has no usable {key!r} "
+            f"section (got {value!r}). Judge prompts must define non-empty "
+            "'system' and 'instructions' text: the system message is built "
+            "from scorer-authored content only, so a judge with no "
+            "instructions must fail loudly rather than grade without rules."
+        )
+    return value
+
+
 def build_judge_messages(
     prompts: Mapping[str, str],
     payload: Mapping[str, Any],
@@ -119,6 +148,10 @@ def build_judge_messages(
     response-format requirement, a retrieved chunk, or a rubric criterion: it
     can only be the value of the field it was placed in.
 
+    Both prompt sections are required and must be non-blank; a missing or
+    invalid section raises ``ValueError`` instead of producing a judge call
+    with no grading rules.
+
     Serialization is strict and deterministic: field order follows
     ``payload``, non-ASCII characters stay as Unicode, and non-finite floats
     are replaced with their string form before dumping, so the result is
@@ -127,9 +160,8 @@ def build_judge_messages(
     inside a value round-trip unchanged through ``json.loads``.
     """
     system_message = "\n\n".join(
-        text
-        for text in (prompts.get("system", ""), prompts.get("instructions", ""))
-        if text
+        _require_prompt_section(prompts, key, "the caller-supplied prompt mapping")
+        for key in ("system", "instructions")
     )
     user_message = json.dumps(
         _sanitize_judge_value(dict(payload)),
@@ -188,7 +220,12 @@ class LLMJudgeScorer(BaseScorer):
         self._client = OpenAI(**client_kwargs)
 
     def _get_prompts(self) -> dict[str, str]:
-        """Get the system and template prompts for this judge."""
+        """Get the system and instruction prompts for this judge.
+
+        Fails closed: both sections must exist and be non-blank, so a scorer
+        can never reach ``_call_judge`` with a system message that carries no
+        grading rules.
+        """
         judge_name = self._judge_name or self.__class__.__name__
         prompts = JUDGE_PROMPTS.get(judge_name)
         if prompts is None:
@@ -196,6 +233,8 @@ class LLMJudgeScorer(BaseScorer):
                 f"No prompts found for judge '{judge_name}'. "
                 f"Available: {sorted(JUDGE_PROMPTS.keys())}"
             )
+        _require_prompt_section(prompts, "system", judge_name)
+        _require_prompt_section(prompts, "instructions", judge_name)
         return prompts
 
     def _judge_messages(self, payload: Mapping[str, Any]) -> tuple[str, str]:
