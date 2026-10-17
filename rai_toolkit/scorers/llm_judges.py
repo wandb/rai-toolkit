@@ -2092,12 +2092,58 @@ def _indent_width(body: str) -> int:
 _LIST_ITEM_PATTERN = re.compile(r"^(?P<indent>[ \t]*)(?P<bullet>[-+*]|\d{1,9}[.)])(?P<gap>[ \t]+)")
 
 
-def _list_item_content_column(body: str) -> int | None:
-    """The column an item's content starts at, or ``None`` if not a list item."""
+def _list_item_split(body: str) -> tuple[int, str] | None:
+    """An item's content column and the content itself, or ``None`` if not one.
+
+    The content is returned as well as the column because the first block of an
+    item may begin on the marker's own line. Skipping the rest of that line left
+    a fence opening there unrecognised, so a marker inside real code was read as
+    a citation and accused of being fabricated.
+    """
     match = _LIST_ITEM_PATTERN.match(body)
     if match is None:
         return None
-    return len(match.group(0).expandtabs(4))
+    return len(match.group(0).expandtabs(4)), body[match.end() :]
+
+
+# The block starts this scanner models. A line matching one of these begins a
+# new block, so it cannot be the lazy continuation of a paragraph opened in a
+# list item above it.
+_ATX_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}([ \t]|$)")
+_BLOCK_QUOTE = re.compile(r"^[ \t]{0,3}>")
+_FENCE_AT_LINE_START = re.compile(r"^[ \t]*(?:`{3,}|~{3,})")
+# A thematic break, and the setext underline that is not one: `--` is too short
+# to break but still underlines the paragraph above it into a heading.
+_BREAK_OR_UNDERLINE = re.compile(
+    r"^[ \t]{0,3}(?:"
+    r"(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,}"
+    r"|-+[ \t]*|=+[ \t]*"
+    r")$"
+)
+
+
+def _continues_paragraph(body: str) -> bool:
+    """Whether a line can only be more of the paragraph already open.
+
+    CommonMark lets an unindented line continue a paragraph that began inside a
+    list item - the "lazy continuation" rule. Treating the smaller indent as
+    proof the item had closed measured the lines after it from column zero, so
+    an ordinary second paragraph of that item was masked as an indented code
+    block and the citation in it disappeared.
+
+    Only a line that could start a block of its own ends the item. Indented
+    code is absent from that set deliberately: it cannot interrupt a paragraph,
+    so a deeply indented line is continuation text too.
+    """
+    if not body.strip():
+        return False
+    return not (
+        _LIST_ITEM_PATTERN.match(body)
+        or _FENCE_AT_LINE_START.match(body)
+        or _ATX_HEADING.match(body)
+        or _BREAK_OR_UNDERLINE.match(body)
+        or _BLOCK_QUOTE.match(body)
+    )
 
 
 def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
@@ -2142,9 +2188,11 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
 
         indent = _indent_width(body)
         # A line shallower than the open item has left it, and any item that
-        # one was nested in.
-        while containers and indent < containers[-1]:
-            containers.pop()
+        # one was nested in - unless it is the lazy continuation of a paragraph
+        # that item opened, which carries no indent requirement at all.
+        if not (paragraph_open and _continues_paragraph(body)):
+            while containers and indent < containers[-1]:
+                containers.pop()
         content_column = containers[-1] if containers else 0
 
         if not paragraph_open and indent >= content_column + 4:
@@ -2164,32 +2212,41 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
             index = last + 1
             continue
 
-        opened = _list_item_content_column(body)
-        if opened is not None:
-            containers.append(opened)
+        # What the rest of the line is scanned as, and the column it starts at.
+        # They differ only on an item's opening line, where the marker has been
+        # consumed and its content begins at the item's content column.
+        scan = body
+        scan_column = 0
+
+        item = _list_item_split(body)
+        if item is not None:
+            content_column, scan = item
+            containers.append(content_column)
+            scan_column = content_column
             paragraph_open = True
             # A list item begins a new block, so an inline span cannot reach
             # across it. Recorded with no extent: it masks nothing, it only
             # stops a backtick run before the item pairing with one after.
             start = offsets[index]
             spans.append((start, start, start))
-            index += 1
-            continue
+            if not scan.strip():
+                index += 1
+                continue
 
-        match = _FENCE_OPEN.search(body)
+        match = _FENCE_OPEN.search(scan)
         if match is None:
             paragraph_open = True
             index += 1
             continue
 
         fence = match.group("fence")
-        indent = body[: match.start("fence")]
+        indent = scan[: match.start("fence")]
         # A fence opens a line, with at most three leading spaces past its
         # container's content column. A run later in the line is prose ("see
         # ``` for fences"), and a deeper indent is an indented code block.
         # Neither opens a block, and treating either as one masked the prose
         # after it. A tab counts as four columns.
-        if indent.strip() or _indent_width(body) - content_column > 3:
+        if indent.strip() or scan_column + _indent_width(scan) - content_column > 3:
             paragraph_open = True
             index += 1
             continue
