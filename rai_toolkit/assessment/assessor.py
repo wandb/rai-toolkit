@@ -206,12 +206,23 @@ class AssessmentResult:
         if self.weave_trace_url:
             lines.append(f"  Weave trace:  {self.weave_trace_url}")
         lines.append(f"  Evaluation backend: {self.evaluation_backend}")
-        if self.cost_estimate and self.cost_estimate.get("estimated_usd_upper_bound") is not None:
+        if self.cost_estimate:
             ce = self.cost_estimate
-            lines.append(
-                f"  Cost estimate (upper bound): ~${ce['estimated_usd_upper_bound']:.4f} USD "
-                f"({ce.get('assumed_llm_calls_upper_bound', '?')} LLM calls @ {ce.get('judge_model_for_pricing', '')})"
-            )
+            if ce.get("status") == "unavailable" or (
+                ce.get("estimated_usd_upper_bound") is None
+                and ce.get("reason") == "unknown_model_pricing"
+            ):
+                requested = ce.get("requested_judge_model") or ce.get("judge_model_for_pricing") or "unknown"
+                lines.append(
+                    "  Cost estimate: pricing unavailable for requested model "
+                    f"{requested} ({ce.get('reason', 'unknown_model_pricing')}). "
+                    "No substitute price was applied."
+                )
+            elif ce.get("estimated_usd_upper_bound") is not None:
+                lines.append(
+                    f"  Cost estimate (upper bound): ~${ce['estimated_usd_upper_bound']:.4f} USD "
+                    f"({ce.get('assumed_llm_calls_upper_bound', '?')} LLM calls @ {ce.get('judge_model_for_pricing', '')})"
+                )
         lines += [
             "",
             "  Why this verdict",
@@ -2027,13 +2038,29 @@ def _render_html(result: "AssessmentResult") -> str:
         )
 
     finops_line = ""
-    if result.cost_estimate and result.cost_estimate.get("estimated_usd_upper_bound") is not None:
+    if result.cost_estimate:
         ce = result.cost_estimate
-        finops_line = (
-            f'<div class="muted">Cost estimate (upper bound): '
-            f'~${ce["estimated_usd_upper_bound"]:.4f} USD · '
-            f'backend <code>{html.escape(result.evaluation_backend)}</code></div>'
-        )
+        backend = html.escape(result.evaluation_backend)
+        if ce.get("status") == "unavailable" or (
+            ce.get("estimated_usd_upper_bound") is None
+            and ce.get("reason") == "unknown_model_pricing"
+        ):
+            requested = html.escape(
+                str(ce.get("requested_judge_model") or ce.get("judge_model_for_pricing") or "unknown")
+            )
+            reason = html.escape(str(ce.get("reason") or "unknown_model_pricing"))
+            note = html.escape(str(ce.get("note") or "Pricing is unavailable for the requested model."))
+            finops_line = (
+                f'<div class="muted">Cost estimate: pricing unavailable for requested model '
+                f'<code>{requested}</code> ({reason}). {note} '
+                f'backend <code>{backend}</code></div>'
+            )
+        elif ce.get("estimated_usd_upper_bound") is not None:
+            finops_line = (
+                f'<div class="muted">Cost estimate (upper bound): '
+                f'~${ce["estimated_usd_upper_bound"]:.4f} USD · '
+                f'backend <code>{backend}</code></div>'
+            )
 
     policy_reason = str((result.policy_assessment or {}).get("reason") or "")
 
