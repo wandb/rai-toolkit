@@ -118,6 +118,10 @@ class RAIToolkit:
         """Get EU AI Act coverage for a profile."""
         return self.engine.get_eu_ai_act_coverage(profile)
 
+    def get_nyc_ll144_coverage(self, profile: ComplianceProfile) -> dict[str, Any]:
+        """Get NYC Local Law 144 coverage for a profile."""
+        return self.engine.get_nyc_ll144_coverage(profile)
+
     # --- Datasets ---
 
     @staticmethod
