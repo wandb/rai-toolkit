@@ -2092,18 +2092,30 @@ def _indent_width(body: str) -> int:
 _LIST_ITEM_PATTERN = re.compile(r"^(?P<indent>[ \t]*)(?P<bullet>[-+*]|\d{1,9}[.)])(?P<gap>[ \t]+)")
 
 
-def _list_item_split(body: str) -> tuple[int, str] | None:
+def _list_item_split(body: str, paragraph_open: bool) -> tuple[int, str] | None:
     """An item's content column and the content itself, or ``None`` if not one.
 
     The content is returned as well as the column because the first block of an
     item may begin on the marker's own line. Skipping the rest of that line left
     a fence opening there unrecognised, so a marker inside real code was read as
     a citation and accused of being fabricated.
+
+    A marker that cannot interrupt an open paragraph is not a list item at all:
+    it is more of that paragraph. Reading one as an item opened a container the
+    renderer never opened, and a fence written after it masked prose.
     """
     match = _LIST_ITEM_PATTERN.match(body)
     if match is None:
         return None
-    return len(match.group(0).expandtabs(4)), body[match.end() :]
+    rest = body[match.end() :]
+    if paragraph_open:
+        # CommonMark lets a list interrupt a paragraph only when its first line
+        # is non-blank and, if ordered, numbered 1. Anything else is paragraph
+        # continuation text that happens to open with a marker.
+        bullet = match.group("bullet")
+        if not rest.strip() or (bullet[-1] in ".)" and bullet[:-1] != "1"):
+            return None
+    return len(match.group(0).expandtabs(4)), rest
 
 
 # The block starts this scanner models. A line matching one of these begins a
@@ -2122,7 +2134,17 @@ _BREAK_OR_UNDERLINE = re.compile(
 )
 
 
-def _continues_paragraph(body: str) -> bool:
+def _ends_a_paragraph(body: str) -> bool:
+    """Whether a line is a leaf block that leaves no paragraph open after it.
+
+    A heading is not a paragraph, so an indented block may follow one directly.
+    Leaving the paragraph open there kept real indented code visible, and a
+    source-shaped token inside it was accused of being a fabricated citation.
+    """
+    return bool(_ATX_HEADING.match(body) or _BREAK_OR_UNDERLINE.match(body))
+
+
+def _continues_paragraph(body: str, content_column: int) -> bool:
     """Whether a line can only be more of the paragraph already open.
 
     CommonMark lets an unindented line continue a paragraph that began inside a
@@ -2131,17 +2153,22 @@ def _continues_paragraph(body: str) -> bool:
     an ordinary second paragraph of that item was masked as an indented code
     block and the citation in it disappeared.
 
-    Only a line that could start a block of its own ends the item. Indented
-    code is absent from that set deliberately: it cannot interrupt a paragraph,
-    so a deeply indented line is continuation text too.
+    Only a line that could start a block of its own ends the paragraph, and a
+    block start carries at most three columns of indent past its container.
+    Deeper than that is indented code, which cannot interrupt a paragraph at
+    all - so a marker, fence or heading written there is continuation text, and
+    reading it as a block opened one the renderer never did.
     """
     if not body.strip():
         return False
+    if _indent_width(body) - content_column > 3:
+        return True
     return not (
-        _LIST_ITEM_PATTERN.match(body)
+        # Only a list that could interrupt the paragraph ends it; the rest is
+        # continuation text that happens to open with a marker.
+        _list_item_split(body, paragraph_open=True)
         or _FENCE_AT_LINE_START.match(body)
-        or _ATX_HEADING.match(body)
-        or _BREAK_OR_UNDERLINE.match(body)
+        or _ends_a_paragraph(body)
         or _BLOCK_QUOTE.match(body)
     )
 
@@ -2189,11 +2216,22 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
         indent = _indent_width(body)
         # A line shallower than the open item has left it, and any item that
         # one was nested in - unless it is the lazy continuation of a paragraph
-        # that item opened, which carries no indent requirement at all.
-        if not (paragraph_open and _continues_paragraph(body)):
-            while containers and indent < containers[-1]:
-                containers.pop()
-        content_column = containers[-1] if containers else 0
+        # that item opened, which carries no indent requirement at all. The
+        # containers it would be left inside are found before deciding, because
+        # whether a line starts a block is itself measured from that column.
+        depth = len(containers)
+        while depth and indent < containers[depth - 1]:
+            depth -= 1
+        outer_column = containers[depth - 1] if depth else 0
+
+        if paragraph_open and _continues_paragraph(body, outer_column):
+            # More of the paragraph above it: it opens no block of its own, and
+            # the containers it sits inside are left exactly as they were.
+            index += 1
+            continue
+
+        del containers[depth:]
+        content_column = outer_column
 
         if not paragraph_open and indent >= content_column + 4:
             probe = index
@@ -2218,7 +2256,7 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
         scan = body
         scan_column = 0
 
-        item = _list_item_split(body)
+        item = _list_item_split(body, paragraph_open)
         if item is not None:
             content_column, scan = item
             containers.append(content_column)
@@ -2235,7 +2273,7 @@ def _fenced_code_spans(text: str) -> list[tuple[int, int, int]]:
 
         match = _FENCE_OPEN.search(scan)
         if match is None:
-            paragraph_open = True
+            paragraph_open = not _ends_a_paragraph(scan)
             index += 1
             continue
 
