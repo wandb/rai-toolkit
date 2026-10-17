@@ -1477,21 +1477,31 @@ def test_non_object_judge_replies_are_unassessed(reply: object) -> None:
     assert "not a JSON object" in result.explanation
 
 
-def test_rejected_values_stay_json_serializable() -> None:
-    # NaN in details["raw_score"] leaked non-standard JSON into reports.
+@pytest.mark.parametrize(
+    ("bad", "recorded"),
+    [
+        (float("nan"), "NaN"),
+        (float("inf"), "Infinity"),
+        (float("-inf"), "-Infinity"),
+    ],
+    ids=["nan", "inf", "negative_inf"],
+)
+def test_rejected_values_stay_json_serializable(bad: float, recorded: str) -> None:
+    # NaN in details["raw_score"] leaked non-standard JSON into reports. The
+    # spelling is the shared one every scorer records, not this scorer's own
+    # ``repr``, so one report does not name the same value two ways.
     output = "Notices required [adverse-action]. Rates capped [reg-z-2024]."
-    for bad in (float("nan"), float("inf"), float("-inf")):
-        scorer = _covering_scorer(output, CONTEXT)
-        scorer._call_judge.return_value = {
-            **scorer._call_judge.return_value,
-            "score": bad,
-        }
+    scorer = _covering_scorer(output, CONTEXT)
+    scorer._call_judge.return_value = {
+        **scorer._call_judge.return_value,
+        "score": bad,
+    }
 
-        result = scorer.score(output, context=CONTEXT)
+    result = scorer.score(output, context=CONTEXT)
 
-        assert result.details["raw_score"] is None
-        assert result.details["rejected_raw_score"] == repr(bad)
-        json.dumps(result.details, allow_nan=False)
+    assert result.details["raw_score"] is None
+    assert result.details["rejected_raw_score"] == recorded
+    json.dumps(result.details, allow_nan=False)
 
 
 def test_every_unassessed_result_is_json_serializable() -> None:

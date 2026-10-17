@@ -21,6 +21,7 @@ from openai import OpenAI
 
 from rai_toolkit import _tracing
 from rai_toolkit.prompts.judge_prompts import JUDGE_PROMPTS
+from rai_toolkit.scorers._json import unassessed as _unassessed_result
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
 from rai_toolkit.scorers.normalizer import ScoreNormalizer
 
@@ -2609,22 +2610,6 @@ def _valid_judge_score(raw: Any) -> float | None:
     return value
 
 
-def _json_safe(value: Any) -> Any:
-    """Render a rejected judge value in a form strict JSON can carry.
-
-    ``NaN`` and the infinities are accepted by ``json.dumps`` only with
-    ``allow_nan=True``, so storing one verbatim leaks non-standard JSON into
-    assessment reports. Rejected values are kept for audit, but as text.
-    """
-    if isinstance(value, float) and not math.isfinite(value):
-        return repr(value)
-    if value is None or isinstance(value, (bool, int, str)):
-        return value
-    if isinstance(value, float):
-        return value
-    return repr(value)
-
-
 def _verified_verdicts(
     raw_verdicts: Any,
     resolved: list[_Citation],
@@ -2832,7 +2817,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         # discarded because the reply as a whole was unusable.
         graded = sorted(verified or [], key=lambda v: v["occurrence"])
         audit: dict[str, Any] = {
-            "rejected_raw_score": _json_safe(raw_score),
+            "rejected_raw_score": _sanitize_judge_value(raw_score),
             "judge_explanation": judge_explanation,
             "discarded_evidence_spans": discarded,
         }
@@ -2896,18 +2881,14 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
         so a coverage-gap report can name the sources involved instead of
         reporting an empty list.
         """
-        details = self._marker_details(
+        diagnostics = self._marker_details(
             fabricated=fabricated, ambiguous=ambiguous, ignored=ignored
         )
-        details.update(extra or {})
-        details["skipped"] = reason
-        return ScorerResult(
-            score=0.0,
-            passed=False,
-            category=self.category,
-            explanation=explanation,
-            details=details,
-            assessed=False,
+        # The shared constructor writes these two itself.
+        diagnostics.pop("scorer_name", None)
+        diagnostics.update(extra or {})
+        return _unassessed_result(
+            self.category, self.name, reason, explanation, **diagnostics
         )
 
     def score(
@@ -3063,7 +3044,7 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 fabricated=fabricated,
                 ambiguous=ambiguous,
                 ignored=ignored,
-                extra={"rejected_judge_reply": _json_safe(result)},
+                extra={"rejected_judge_reply": _sanitize_judge_value(result)},
             )
 
         verified, contradictory, raw_verdict_count = _verified_verdicts(
