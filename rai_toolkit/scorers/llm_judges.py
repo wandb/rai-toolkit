@@ -20,12 +20,7 @@ from typing import Any, NamedTuple
 from openai import OpenAI
 
 from rai_toolkit import _tracing
-from rai_toolkit.prompts.judge_prompts import (
-    CITATION_FABRICATED_BLOCK,
-    CITATION_SCOPE_BLOCK,
-    CITATION_TAG_BLOCK,
-    JUDGE_PROMPTS,
-)
+from rai_toolkit.prompts.judge_prompts import JUDGE_PROMPTS
 from rai_toolkit.scorers.base import BaseScorer, ScorerResult
 from rai_toolkit.scorers.normalizer import ScoreNormalizer
 
@@ -2787,42 +2782,6 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
     citation_pattern = _CITATION_PATTERN
     source_label_pattern = _SOURCE_LABEL_PATTERN
 
-    def _format_prompt(
-        self,
-        output: str,
-        input: str = "",
-        context: str = "",
-        resolved: str = "",
-        fabricated: str = "",
-        tag: tuple[str, str] | None = None,
-    ) -> str:
-        """Standard judge prompt, scoped to the citations Python resolved.
-
-        ``resolved`` names the only markers the judge may grade. Without it the
-        judge grades every bracket it can see, including ones this scorer
-        classified as ambiguous or as not being citations at all. Discarding
-        those verdicts afterwards is not enough: the judge returns a single
-        holistic score, so an ungraded marker it disliked still drags the number
-        down.
-
-        ``tag`` names the delimiters the occurrence numbers were written with.
-        They are chosen per response rather than fixed, so the prompt has to say
-        which pair was used instead of describing one it cannot guarantee.
-
-        Formatted in two stages on purpose. The base template escapes the braces
-        of its JSON example, and ``super()`` collapses them to single braces; a
-        second ``.format()`` pass over that string would read them as fields and
-        raise. So each appended block is formatted separately.
-        """
-        base = super()._format_prompt(output=output, input=input, context=context)
-        if tag:
-            base += CITATION_TAG_BLOCK.format(open=tag[0], close=tag[1])
-        if resolved:
-            base += CITATION_SCOPE_BLOCK.format(resolved=resolved)
-        if fabricated:
-            base += CITATION_FABRICATED_BLOCK.format(fabricated=fabricated)
-        return base
-
     def _marker_details(
         self,
         *,
@@ -3060,7 +3019,6 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 ignored=ignored,
             )
 
-        prompts = self._get_prompts()
         tag = _occurrence_tag(output)
         if tag is None:
             # Unreachable while the search lengthens, but the row degrades to a
@@ -3075,17 +3033,24 @@ class CitationCorrectnessScorer(LLMJudgeScorer):
                 ambiguous=ambiguous,
                 ignored=ignored,
             )
-        user_prompt = self._format_prompt(
-            output=_annotate_occurrences(output, resolved, tag),
-            tag=tag,
-            input=input,
-            context=context,
-            resolved="\n".join(
-                f"  {c.index}. [{c.marker}]" for c in resolved
-            ),
-            fabricated=", ".join(f"[{marker}]" for marker in fabricated),
-        )
-        result = self._call_judge(prompts["system"], user_prompt)
+        # The citations are a structured array rather than a rendered list,
+        # so a marker-like token inside the response cannot add one: the judge
+        # grades exactly the occurrences this array carries. The tag
+        # delimiters travel with it because they are chosen per response -
+        # they are this row's data, not a rule, and naming them in the
+        # instructions would state a pair that is not always the one used.
+        payload = {
+            "input": input or _NO_INPUT,
+            "context": context,
+            "output": _annotate_occurrences(output, resolved, tag),
+            "occurrence_tag": {"open": tag[0], "close": tag[1]},
+            "citations": [
+                {"occurrence": c.index, "marker": c.marker} for c in resolved
+            ],
+            "fabricated_markers": list(fabricated),
+        }
+        system_message, user_message = self._judge_messages(payload)
+        result = self._call_judge(system_message, user_message)
         # ``_call_judge`` returns whatever the reply parsed to, and valid JSON
         # has a non-object top level for ``null`` or ``[]``. Reading a score off
         # one raised rather than producing a controlled result.

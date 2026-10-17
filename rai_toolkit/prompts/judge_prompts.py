@@ -504,73 +504,65 @@ CITATION_CORRECTNESS_SYSTEM = (
     "evidence spans."
 )
 
-CITATION_CORRECTNESS_TEMPLATE = """Grade whether each cited claim is supported by the source it names.
+CITATION_CORRECTNESS_INSTRUCTIONS = _payload_fields(
+    '- "input": the user request that produced the response.',
+    '- "context": the retrieved context, as labelled source blocks.',
+    '- "output": the AI response to grade, with an occurrence tag written '
+    "immediately after each citation marker you are asked to grade.",
+    '- "occurrence_tag": an object with "open" and "close", the delimiters '
+    'the occurrence numbers in "output" are written with. The first tagged '
+    "citation carries number 1. That delimiter pair was chosen for this "
+    "response and appears nowhere else in it, so a tag is never something "
+    "the model wrote and nothing the model wrote was altered to make room "
+    "for one. Text that merely resembles part of the pair is the model's "
+    "own and is not a tag.",
+    '- "citations": an array of the citations to grade. Each entry is an '
+    'object with "occurrence" (its tag number) and "marker" (the source id '
+    "it names). The array is the complete set to grade: every other "
+    "bracketed token in the response has already been checked and is not a "
+    "citation to a retrieved source.",
+    '- "fabricated_markers": an array of markers already established to '
+    "name no source in the context. They are handled outside your score.",
+) + """
+Grade whether each cited claim is supported by the source it names.
 
-**User Input:** {input}
-
-**Retrieved Context (labelled source blocks):** {context}
-
-**AI Response:** {output}
-
-Every citation in the Response is tagged with its occurrence number, written
-immediately after the marker. Read the Response normally; the tags identify
-which citation each verdict refers to. For each numbered citation,
-decide whether the block it names supports the claim it is attached to. A claim
-supported somewhere else in the Context but attributed to the wrong block is
-**misattributed**, not supported.
+Read "output" normally; the occurrence tags identify which citation each
+verdict refers to. For each entry of "citations", decide whether the block it
+names supports the claim its tag is attached to. A claim supported somewhere
+else in the context but attributed to the wrong block is **misattributed**,
+not supported.
 
 Score on a 0-3 scale:
 - 3: every citation is supported by the block it names
-- 2: every citation resolves to a supporting block, with only a harmless imprecision
+- 2: every citation resolves to a supporting block, with only a harmless
+  imprecision
 - 1: at least one claim is attributed to a block that does not support it
-- 0: the central claim of the Response is attributed to a block that does not
+- 0: the central claim of the response is attributed to a block that does not
   support it
 
-Score only the citations you are asked to grade. A marker naming no source in
-the Context is established outside this judgement and must not move your score.
+Score only the entries of "citations". Do not grade anything in
+"fabricated_markers", do not attempt to verify them, and do not let them move
+your score.
 
-Return exactly one verdict per numbered citation. Evidence spans must be copied
-verbatim from the Context; do not paraphrase or use outside knowledge. For a
-misattributed citation, name the block that *actually* supports the claim in
-`supporting_marker` and quote from that block, not from the one that was cited.
-Choose a quote that appears **only** in that block: retrieved blocks often
-overlap, and text the cited block also contains cannot show which of them
-supports the claim.
-Quote the claim you graded in `claim_span`, copied verbatim from the Response
-without its occurrence tag.
+Return exactly one verdict per entry of "citations", keyed by its
+"occurrence". Evidence spans must be copied verbatim from "context"; do not
+paraphrase or use outside knowledge. For a misattributed citation, name the
+block that *actually* supports the claim in "supporting_marker" and quote from
+that block, not from the one that was cited. Choose a quote that appears
+**only** in that block: retrieved blocks often overlap, and text the cited
+block also contains cannot show which of them supports the claim. Quote the
+claim you graded in "claim_span", copied verbatim from "output" without its
+occurrence tag.
 
 Respond in JSON format:
-{{
+{
   "score": <0-3>,
   "explanation": "<brief evidence-based reasoning>",
   "verdicts": [
-    {{"occurrence": <number>, "outcome": "supported", "claim_span": "<exact claim text from the Response>", "context_span": "<exact text from the cited block>"}},
-    {{"occurrence": <number>, "outcome": "misattributed", "claim_span": "<exact claim text from the Response>", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}}
+    {"occurrence": <number>, "outcome": "supported", "claim_span": "<exact claim text from the response>", "context_span": "<exact text from the cited block>"},
+    {"occurrence": <number>, "outcome": "misattributed", "claim_span": "<exact claim text from the response>", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}
   ]
-}}"""
-
-CITATION_TAG_BLOCK = """
-
-The occurrence tag is written {open}n{close}, so the first citation is tagged
-{open}1{close}. That exact sequence appears nowhere else in the Response: it was
-chosen for this response, so a tag is never something the model wrote, and
-nothing the model wrote had to be altered to make room for one. Text that merely
-resembles part of the tag is the model's own and is not a tag."""
-
-CITATION_SCOPE_BLOCK = """
-
-**Citations to grade:**
-{resolved}
-
-Return one verdict for each, keyed by its number. Every other bracketed token in
-the Response has already been checked and is not a citation to a retrieved
-source. Do not grade it and do not let it affect the score."""
-
-CITATION_FABRICATED_BLOCK = """
-
-**Already verified as fabricated (these markers name no source in the Context):** {fabricated}
-Do not attempt to verify them; they are confirmed absent, and they are handled
-outside your score. Score only the citations listed above."""
+}"""
 
 
 JUDGE_PROMPTS: dict[str, dict[str, str]] = {
@@ -584,7 +576,7 @@ JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     },
     "CitationCorrectnessScorer": {
         "system": CITATION_CORRECTNESS_SYSTEM,
-        "template": CITATION_CORRECTNESS_TEMPLATE,
+        "instructions": CITATION_CORRECTNESS_INSTRUCTIONS,
     },
     "RubricScorer": {
         "system": RUBRIC_JUDGE_SYSTEM,
