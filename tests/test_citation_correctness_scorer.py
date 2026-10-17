@@ -2538,6 +2538,336 @@ def test_a_list_item_ends_a_paragraph_for_inline_spans() -> None:
     assert "adverse-action" in [c.marker for c in citations]
 
 
+# A list item is not closed by a line that is merely less indented. CommonMark
+# lets an unindented line continue a paragraph the item opened - the "lazy
+# continuation" rule - so popping the container there measured everything after
+# it from column zero, and the item's own second paragraph was masked as an
+# indented code block. A fabricated citation written in that paragraph vanished
+# and the row passed.
+LAZY_CONTINUATION = {
+    "ordered": (
+        "1. Notices are required [adverse-action].\n"
+        "More explanation.\n\n"
+        "    Rates are capped [reg-z-2024]."
+    ),
+    "bullet": (
+        "- Notices are required [adverse-action].\n"
+        "More explanation.\n\n"
+        "  Rates are capped [reg-z-2024]."
+    ),
+    "nested": (
+        "- Outer item.\n"
+        "  - Notices are required [adverse-action].\n"
+        "Lazy line for the inner item.\n\n"
+        "    Rates are capped [reg-z-2024]."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "form", sorted(LAZY_CONTINUATION), ids=sorted(LAZY_CONTINUATION)
+)
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_a_lazy_continuation_keeps_the_item_open(form: str, eol: str) -> None:
+    output = LAZY_CONTINUATION[form].replace("\n", LIST_EOL[eol])
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize(
+    "form", sorted(LAZY_CONTINUATION), ids=sorted(LAZY_CONTINUATION)
+)
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_a_lazy_continuation_still_fails_on_the_citation(form: str, eol: str) -> None:
+    output = LAZY_CONTINUATION[form].replace("\n", LIST_EOL[eol])
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+# The other side of the rule: a line that starts a block of its own is not
+# continuation text, so it does close the item and what follows is measured
+# from column zero again. Without this the container would never be popped by
+# anything but a blank line, and genuine code after the list would stay visible.
+CLOSES_THE_ITEM = {
+    "atx_heading": "# Heading",
+    "thematic_break": "***",
+    "setext_underline": "===",
+    "block_quote": "> quoted",
+}
+
+
+@pytest.mark.parametrize(
+    "closer", sorted(CLOSES_THE_ITEM), ids=sorted(CLOSES_THE_ITEM)
+)
+def test_a_block_start_after_a_list_paragraph_closes_the_item(closer: str) -> None:
+    output = (
+        "- Notices are required [adverse-action].\n"
+        f"{CLOSES_THE_ITEM[closer]}\n\n"
+        "    Rates are capped [reg-z-2024]."
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_closed_item_is_not_reopened_by_later_prose() -> None:
+    # The blank line plus an unindented paragraph has already left the list.
+    # The paragraph is lazy for nothing, so the indented line after it is code.
+    output = (
+        "- Notices are required [adverse-action].\n\n"
+        "Top-level paragraph.\n\n"
+        "    Rates are capped [reg-z-2024]."
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_genuine_code_after_a_lazy_continuation_is_still_excluded() -> None:
+    # Keeping the item open keeps its content column too: code inside the item
+    # is still four past that column, not four past zero.
+    output = (
+        "1. Notices are required [adverse-action].\n"
+        "More explanation.\n\n"
+        "       Rates are capped [reg-z-2024]."
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+# A list marker does not end the line it sits on: the item's first block may
+# begin right after it. Skipping the rest of that line left a fence opening
+# there unrecognised, so the code inside it was read as prose and its
+# source-shaped token was accused of being a fabricated citation.
+FENCE_MARKERS = {"ordered": ("1.", "   "), "bullet": ("-", "  ")}
+FENCE_CHARS = {"backtick": "```", "tilde": "~~~"}
+
+
+def _fence_on_marker_line(marker: str, pad: str, fence: str, eol: str) -> str:
+    return (
+        f"Notices are required [adverse-action].{eol}{eol}"
+        f"{marker} {fence}text{eol}"
+        f"{pad}Rates [reg-z-2024]{eol}"
+        f"{pad}{fence}"
+    )
+
+
+@pytest.mark.parametrize("fence", sorted(FENCE_CHARS), ids=sorted(FENCE_CHARS))
+@pytest.mark.parametrize("marker", sorted(FENCE_MARKERS), ids=sorted(FENCE_MARKERS))
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_a_fence_on_the_marker_line_masks_the_block(
+    fence: str, marker: str, eol: str
+) -> None:
+    output = _fence_on_marker_line(
+        *FENCE_MARKERS[marker], FENCE_CHARS[fence], LIST_EOL[eol]
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+@pytest.mark.parametrize("fence", sorted(FENCE_CHARS), ids=sorted(FENCE_CHARS))
+@pytest.mark.parametrize("marker", sorted(FENCE_MARKERS), ids=sorted(FENCE_MARKERS))
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_a_fence_on_the_marker_line_leaves_the_row_passing(
+    fence: str, marker: str, eol: str
+) -> None:
+    output = _fence_on_marker_line(
+        *FENCE_MARKERS[marker], FENCE_CHARS[fence], LIST_EOL[eol]
+    )
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert result.passed
+    assert result.score == 1.0
+    assert result.details["fabricated_citations"] == []
+
+
+def test_an_unclosed_fence_on_the_marker_line_ends_with_its_item() -> None:
+    # The same container bound as a fence on a line of its own: it cannot
+    # outlive the item, so the unindented line after it is prose again.
+    output = "- ```\nRates [reg-z-2024]"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["reg-z-2024"]
+
+
+def test_a_sibling_item_does_not_close_the_list() -> None:
+    # It replaces the container at the same column rather than popping it, so
+    # the indented paragraph after the blank line is the new item's prose.
+    output = (
+        "- Notices are required [adverse-action].\n"
+        "- Another item.\n\n"
+        "    Rates are capped [reg-z-2024]."
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+def test_a_fence_on_a_nested_item_marker_line_is_measured_from_that_item() -> None:
+    # The content column of the item that opened the fence is the inner one,
+    # so the block's contents and its closer are measured from there.
+    output = (
+        "- Notices are required [adverse-action].\n"
+        "  - ```\n"
+        "    Rates [reg-z-2024]\n"
+        "    ```"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_run_later_on_the_marker_line_is_prose() -> None:
+    # The fence must open the item's content, not merely appear in it.
+    output = "- See ``` for fences, and rates are capped [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["reg-z-2024"]
+
+
+def test_a_backtick_info_string_on_the_marker_line_does_not_open_a_fence() -> None:
+    # A backtick fence's info string may not contain a backtick, on an item's
+    # opening line as anywhere else.
+    output = "- ```a`b\nRates are capped [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["reg-z-2024"]
+
+
+def test_an_empty_item_line_opens_no_block() -> None:
+    # Nothing follows the marker, so there is no first block to parse.
+    output = "- \n  Rates are capped [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["reg-z-2024"]
+
+
+# Reading the first block of an item made the marker itself load-bearing, so
+# the cases where a marker is not a marker had to be settled too. A list only
+# interrupts a paragraph when its first line is non-blank and, if ordered, it
+# is numbered 1; anything else is paragraph text that happens to open with one.
+# Opening a container there let a fence on the same line mask the prose after.
+NOT_A_CONTAINER = {
+    "ordered_not_numbered_one": (
+        "Notices are required [adverse-action].\n"
+        "2) ```\n"
+        "Rates are capped [reg-z-2024]."
+    ),
+    "marker_indented_four": (
+        "Notices are required [adverse-action].\n"
+        "     - ```\n"
+        "Rates are capped [reg-z-2024]."
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    "form", sorted(NOT_A_CONTAINER), ids=sorted(NOT_A_CONTAINER)
+)
+@pytest.mark.parametrize("eol", sorted(LIST_EOL), ids=sorted(LIST_EOL))
+def test_a_marker_that_cannot_interrupt_opens_no_block(form: str, eol: str) -> None:
+    output = NOT_A_CONTAINER[form].replace("\n", LIST_EOL[eol])
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+@pytest.mark.parametrize(
+    "form", sorted(NOT_A_CONTAINER), ids=sorted(NOT_A_CONTAINER)
+)
+def test_a_marker_that_cannot_interrupt_still_fails_on_the_citation(
+    form: str,
+) -> None:
+    output = NOT_A_CONTAINER[form]
+    scorer = _covering_scorer(output, CONTEXT)
+
+    result = scorer.score(output, context=CONTEXT)
+
+    assert result.assessed
+    assert not result.passed
+    assert result.details["fabricated_citations"] == ["reg-z-2024"]
+
+
+def test_an_item_whose_first_line_is_blank_cannot_interrupt() -> None:
+    # The marker carries no content, so the paragraph above it continues and
+    # the indented line after it is that paragraph's code block.
+    output = "Notices are required [adverse-action].\n- \n    Rates [reg-z-2024]."
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_an_ordered_marker_numbered_one_does_interrupt() -> None:
+    # The other side of the rule, so it does not become a blanket refusal to
+    # read a marker that follows prose.
+    output = "Notices are required [adverse-action].\n1. ```\nRates [reg-z-2024]\n```"
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
+# A heading is not a paragraph, so an indented code block may follow one with
+# no blank line between. Leaving the paragraph open across it kept real code
+# visible, and a source-shaped token inside it was accused of fabrication.
+PARAGRAPH_ENDINGS = {
+    "atx_heading": "# Heading",
+    "thematic_break": "***",
+    "setext_underline": "===",
+}
+
+
+@pytest.mark.parametrize(
+    "form", sorted(PARAGRAPH_ENDINGS), ids=sorted(PARAGRAPH_ENDINGS)
+)
+def test_a_leaf_block_lets_indented_code_follow_it(form: str) -> None:
+    output = (
+        "Notices are required [adverse-action].\n"
+        f"{PARAGRAPH_ENDINGS[form]}\n"
+        "    Rates [reg-z-2024]"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action"]
+
+
+def test_a_block_quote_keeps_the_paragraph_open() -> None:
+    # It is a container, not a leaf: the indented line after it continues the
+    # paragraph inside it rather than opening a code block.
+    output = (
+        "Notices are required [adverse-action].\n> quoted\n    Rates [reg-z-2024]"
+    )
+
+    citations = _extract_citations(output)
+
+    assert [c.marker for c in citations] == ["adverse-action", "reg-z-2024"]
+
+
 # An indented code block cannot interrupt a paragraph, which is what makes the
 # rule safe to apply: a continuation line inside a list follows the item's text,
 # so it is never read as code and a citation written there is still graded.
