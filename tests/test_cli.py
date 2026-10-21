@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: rai-toolkit
 
+import json
 from pathlib import Path
 
 import pytest
@@ -87,3 +88,60 @@ def test_datasets_parser_error_exits_with_code_two(capsys) -> None:
 
     assert error.value.code == 2
     assert "invalid choice" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["datasets", "show", "bbqq"],
+        ["datasets", "infer-policy-expectations", "bbqq", "--limit", "0"],
+    ],
+)
+def test_unknown_dataset_name_is_an_input_error(command: list[str], capsys) -> None:
+    exit_code = main(command)
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "error: Example dataset 'bbqq' not registered." in captured.err
+    assert "Did you mean: bbq?" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_unknown_dataset_name_without_a_suggestion(capsys) -> None:
+    exit_code = main(["datasets", "show", "zzzzzzzzzz"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "Example dataset 'zzzzzzzzzz' not registered." in captured.err
+    assert "Did you mean" not in captured.err
+
+
+def test_datasets_show_reports_a_registered_dataset(capsys) -> None:
+    exit_code = main(["datasets", "show", "bbq"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out)["slug"] == "bbq"
+    assert captured.err == ""
+
+
+def test_infer_policy_expectations_with_limit_zero_prints_an_empty_list(capsys) -> None:
+    exit_code = main(["datasets", "infer-policy-expectations", "bbq", "--limit", "0"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert json.loads(captured.out) == []
+
+
+def test_loader_key_error_for_a_registered_dataset_is_not_an_unknown_name(monkeypatch) -> None:
+    from rai_toolkit.examples import ExampleRegistry
+
+    def broken_load(slug: str, limit: int | None = None) -> list[dict]:
+        raise KeyError("question")
+
+    monkeypatch.setattr(ExampleRegistry, "load", staticmethod(broken_load))
+
+    with pytest.raises(KeyError, match="question"):
+        main(["datasets", "infer-policy-expectations", "bbq", "--limit", "1"])

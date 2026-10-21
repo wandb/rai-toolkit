@@ -209,9 +209,27 @@ def _cmd_datasets_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def _unknown_dataset_error(slug: str) -> str | None:
+    """The registry's message for an unregistered slug, or None if it is registered.
+
+    Only the lookup is guarded, so a KeyError raised later by a registered
+    dataset's loader still surfaces as itself.
+    """
+    from rai_toolkit.examples import ExampleRegistry
+
+    try:
+        ExampleRegistry.get(slug)
+    except KeyError as e:
+        return str(e.args[0]) if e.args else f"Example dataset '{slug}' not registered."
+    return None
+
+
 def _cmd_datasets_show(args: argparse.Namespace) -> int:
     from rai_toolkit.examples import ExampleRegistry
 
+    if error := _unknown_dataset_error(args.slug):
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     desc = ExampleRegistry.get(args.slug)
     info = {
         "slug": desc.slug,
@@ -249,6 +267,9 @@ def _cmd_datasets_infer_policy_expectations(args: argparse.Namespace) -> int:
     """
     from rai_toolkit.examples import ExampleRegistry
 
+    if error := _unknown_dataset_error(args.slug):
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     rows = ExampleRegistry.load(args.slug, limit=args.limit)
     drafted = []
     for row in rows:
