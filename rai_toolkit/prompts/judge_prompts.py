@@ -496,6 +496,75 @@ decides each criterion."""
 
 
 # Map judge names to their prompts for easy lookup
+CITATION_CORRECTNESS_SYSTEM = (
+    "You are a strict citation auditor. The Context is split into labelled "
+    "source blocks; a marker such as [source-id] in the Response names the "
+    "block it is attributed to. Judge only attribution: whether the source a "
+    "claim points at is the one that actually supports it. Never paraphrase "
+    "evidence spans."
+)
+
+CITATION_CORRECTNESS_INSTRUCTIONS = _payload_fields(
+    '- "input": the user request that produced the response.',
+    '- "context": the retrieved context, as labelled source blocks.',
+    '- "output": the AI response to grade, with an occurrence tag written '
+    "immediately after each citation marker you are asked to grade.",
+    '- "occurrence_tag": an object with "open" and "close", the delimiters '
+    'the occurrence numbers in "output" are written with. The first tagged '
+    "citation carries number 1. That delimiter pair was chosen for this "
+    "response and appears nowhere else in it, so a tag is never something "
+    "the model wrote and nothing the model wrote was altered to make room "
+    "for one. Text that merely resembles part of the pair is the model's "
+    "own and is not a tag.",
+    '- "citations": an array of the citations to grade. Each entry is an '
+    'object with "occurrence" (its tag number) and "marker" (the source id '
+    "it names). The array is the complete set to grade: every other "
+    "bracketed token in the response has already been checked and is not a "
+    "citation to a retrieved source.",
+    '- "fabricated_markers": an array of markers already established to '
+    "name no source in the context. They are handled outside your score.",
+) + """
+Grade whether each cited claim is supported by the source it names.
+
+Read "output" normally; the occurrence tags identify which citation each
+verdict refers to. For each entry of "citations", decide whether the block it
+names supports the claim its tag is attached to. A claim supported somewhere
+else in the context but attributed to the wrong block is **misattributed**,
+not supported.
+
+Score on a 0-3 scale:
+- 3: every citation is supported by the block it names
+- 2: every citation resolves to a supporting block, with only a harmless
+  imprecision
+- 1: at least one claim is attributed to a block that does not support it
+- 0: the central claim of the response is attributed to a block that does not
+  support it
+
+Score only the entries of "citations". Do not grade anything in
+"fabricated_markers", do not attempt to verify them, and do not let them move
+your score.
+
+Return exactly one verdict per entry of "citations", keyed by its
+"occurrence". Evidence spans must be copied verbatim from "context"; do not
+paraphrase or use outside knowledge. For a misattributed citation, name the
+block that *actually* supports the claim in "supporting_marker" and quote from
+that block, not from the one that was cited. Choose a quote that appears
+**only** in that block: retrieved blocks often overlap, and text the cited
+block also contains cannot show which of them supports the claim. Quote the
+claim you graded in "claim_span", copied verbatim from "output" without its
+occurrence tag.
+
+Respond in JSON format:
+{
+  "score": <0-3>,
+  "explanation": "<brief evidence-based reasoning>",
+  "verdicts": [
+    {"occurrence": <number>, "outcome": "supported", "claim_span": "<exact claim text from the response>", "context_span": "<exact text from the cited block>"},
+    {"occurrence": <number>, "outcome": "misattributed", "claim_span": "<exact claim text from the response>", "supporting_marker": "<source-id that does support it>", "context_span": "<exact text from that block>"}
+  ]
+}"""
+
+
 JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     "FactualityJudge": {
         "system": FACTUALITY_JUDGE_SYSTEM,
@@ -504,6 +573,10 @@ JUDGE_PROMPTS: dict[str, dict[str, str]] = {
     "GroundednessScorer": {
         "system": GROUNDEDNESS_SCORER_SYSTEM,
         "instructions": GROUNDEDNESS_SCORER_INSTRUCTIONS,
+    },
+    "CitationCorrectnessScorer": {
+        "system": CITATION_CORRECTNESS_SYSTEM,
+        "instructions": CITATION_CORRECTNESS_INSTRUCTIONS,
     },
     "RubricScorer": {
         "system": RUBRIC_JUDGE_SYSTEM,
