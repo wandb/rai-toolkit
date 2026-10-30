@@ -69,11 +69,11 @@ class ComplianceReport:
                             "explanation": result.explanation,
                         }
                         for name, result in item.scores.items()
-                        if not result.passed
+                        if result.assessed and not result.passed
                     },
                 }
                 for item in self.results.items
-                if any(not r.passed for r in item.scores.values())
+                if any(r.assessed and not r.passed for r in item.scores.values())
             ],
         }
 
@@ -112,15 +112,24 @@ class ComplianceReport:
                 )
                 continue
             status = "PASS" if stats["pass_rate"] >= 0.7 else "FAIL"
-            lines.append(
-                f"  {cat_id}: {stats['mean_score']:.1%} "
-                f"({stats['passed_items']}/{stats['total_items']} passed) "
-                f"[{status}]"
-            )
+            unassessed = stats.get("unassessed_items", 0)
+            if unassessed:
+                lines.append(
+                    f"  {cat_id}: {stats['mean_score']:.1%} "
+                    f"({stats['passed_items']}/{stats['total_items']} passed, "
+                    f"{unassessed} un-assessed) "
+                    f"[{status}]"
+                )
+            else:
+                lines.append(
+                    f"  {cat_id}: {stats['mean_score']:.1%} "
+                    f"({stats['passed_items']}/{stats['total_items']} passed) "
+                    f"[{status}]"
+                )
 
         failed_count = sum(
             1 for item in r.items
-            if any(not result.passed for result in item.scores.values())
+            if any(result.assessed and not result.passed for result in item.scores.values())
         )
         if failed_count:
             lines.append(f"")
