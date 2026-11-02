@@ -62,16 +62,17 @@ def test_csv_surplus_fields_after_multiline_and_blank_line_reports_record_number
     assert "private-extra" not in message
 
 
-def test_csv_preserves_valid_behavior(tmp_path):
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_csv_preserves_valid_behavior(tmp_path, newline):
     path = tmp_path / "rows.csv"
     content = (
         "QUESTION,ANSWER,RETRIEVED_CONTEXT,custom_col\n"
-        '"What is X, Y?",X,"First line\nSecond line",val1\n'
+        f'"What is X, Y?",X,"First line{newline}Second line",val1\n'
         "\n"
         "¿Qué es IA?,Inteligencia Artificial,Contexto UTF-8 — test,val2\n"
         "Short row question\n"
     )
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(content.encode("utf-8"))
 
     rows = DatasetLoader.from_file(path)
 
@@ -79,7 +80,7 @@ def test_csv_preserves_valid_behavior(tmp_path):
         {
             "input": "What is X, Y?",
             "expected": "X",
-            "context": "First line\nSecond line",
+            "context": f"First line{newline}Second line",
             "custom_col": "val1",
         },
         {
