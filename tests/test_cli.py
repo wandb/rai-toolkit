@@ -145,3 +145,23 @@ def test_loader_key_error_for_a_registered_dataset_is_not_an_unknown_name(monkey
 
     with pytest.raises(KeyError, match="question"):
         main(["datasets", "infer-policy-expectations", "bbq", "--limit", "1"])
+
+
+@pytest.mark.parametrize(
+    "model_ref,expected_error",
+    [
+        ("not-a-valid-ref", "Invalid model ref: not-a-valid-ref"),
+        ("no_such_module.MyModel", "No module named 'no_such_module'"),
+        ("rai_toolkit.cli.NoSuchModel", "module 'rai_toolkit.cli' has no attribute 'NoSuchModel'"),
+    ],
+)
+def test_model_ref_load_failure_is_an_input_error(
+    model_ref: str, expected_error: str, capsys
+) -> None:
+    exit_code = main(["assess", model_ref, "--demo-datasets"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert f"error: {expected_error}" in captured.err
+    assert "Traceback" not in captured.err

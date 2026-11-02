@@ -152,7 +152,14 @@ def _build_redteam_parser(sub: argparse._SubParsersAction) -> None:
 def _cmd_assess(args: argparse.Namespace) -> int:
     from rai_toolkit.assessment import Assessor
 
-    model = _load_model(args.model_ref)
+    try:
+        model = _load_model(args.model_ref)
+    except (ValueError, ImportError, AttributeError) as e:
+        # Input errors from the ref itself: malformed ref, missing module,
+        # missing class/factory. Factory runtime errors still surface as-is.
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
     if args.dataset:
         datasets = args.dataset
     else:
