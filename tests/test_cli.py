@@ -165,3 +165,37 @@ def test_model_ref_load_failure_is_an_input_error(
     assert captured.out == ""
     assert f"error: {expected_error}" in captured.err
     assert "Traceback" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "kind,exc",
+    [
+        (kind, exc)
+        for kind in ("factory", "constructor")
+        for exc in (ValueError, ImportError, AttributeError, RuntimeError)
+    ],
+)
+def test_model_implementation_errors_propagate(tmp_path, monkeypatch, kind: str, exc) -> None:
+    """Errors raised by a valid model's factory or constructor surface unchanged.
+
+    Only reference resolution (malformed ref, missing module, missing attribute)
+    is converted to an input error; invoking the resolved object is not guarded.
+    """
+    module_name = f"_rai_probe_{kind}_{exc.__name__}_model"
+    if kind == "factory":
+        (tmp_path / f"{module_name}.py").write_text(
+            "def build():\n"
+            f"    raise {exc.__name__}('model implementation failure')\n"
+        )
+        model_ref = f"{module_name}:build"
+    else:
+        (tmp_path / f"{module_name}.py").write_text(
+            "class TheModel:\n"
+            "    def __init__(self):\n"
+            f"        raise {exc.__name__}('model implementation failure')\n"
+        )
+        model_ref = f"{module_name}.TheModel"
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(exc, match="model implementation failure"):
+        main(["assess", model_ref, "--demo-datasets"])

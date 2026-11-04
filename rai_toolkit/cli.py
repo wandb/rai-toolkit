@@ -153,12 +153,14 @@ def _cmd_assess(args: argparse.Namespace) -> int:
     from rai_toolkit.assessment import Assessor
 
     try:
-        model = _load_model(args.model_ref)
+        obj = _load_model(args.model_ref)
     except (ValueError, ImportError, AttributeError) as e:
         # Input errors from the ref itself: malformed ref, missing module,
-        # missing class/factory. Factory runtime errors still surface as-is.
+        # missing class/factory. The model is invoked past this guard, so
+        # errors raised by a valid factory or constructor surface as-is.
         print(f"error: {e}", file=sys.stderr)
         return 2
+    model = obj() if callable(obj) else obj
 
     if args.dataset:
         datasets = args.dataset
@@ -332,11 +334,14 @@ def _cmd_redteam_catalog(args: argparse.Namespace) -> int:
 
 
 def _load_model(model_ref: str):
-    """Import a BaseModel subclass from a dotted path.
+    """Resolve a model object from a dotted path.
 
     Supports two forms:
-      - ``pkg.module.ClassName``: imports and instantiates with no args.
-      - ``pkg.module:factory``: imports a factory callable and calls it.
+      - ``pkg.module.ClassName``: resolves the class; the caller instantiates it.
+      - ``pkg.module:factory``: resolves the factory callable; the caller calls it.
+
+    Only reference resolution happens here, so exceptions raised by a model's
+    own factory or constructor propagate to the caller unchanged.
     """
     if ":" in model_ref:
         module_path, attr = model_ref.split(":", 1)
@@ -346,8 +351,7 @@ def _load_model(model_ref: str):
         raise ValueError(f"Invalid model ref: {model_ref}")
 
     module = importlib.import_module(module_path)
-    obj = getattr(module, attr)
-    return obj() if callable(obj) else obj
+    return getattr(module, attr)
 
 
 def _default_datasets_for(preset: str, *, allow_samples: bool = False) -> list[str]:
