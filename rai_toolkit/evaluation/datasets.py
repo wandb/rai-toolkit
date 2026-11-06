@@ -46,6 +46,8 @@ class DatasetLoader:
         JSON files accept an array of objects or an object with a ``data``
         array. Invalid dataset shapes raise ``ValueError`` with the filename;
         invalid rows also include their one-based array position, not a line number.
+        JSON syntax errors raise ``ValueError`` with the filename and one-based
+        physical line and column, chaining the original ``JSONDecodeError``.
 
         Args:
             path: Path to CSV, JSON, or JSONL file.
@@ -96,7 +98,12 @@ class DatasetLoader:
     @staticmethod
     def _load_json(path: Path) -> list[dict[str, Any]]:
         with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{path}: line {exc.lineno}, column {exc.colno}: invalid JSON: {exc.msg}"
+                ) from exc
         if isinstance(data, dict):
             data = data.get("data")
         if not isinstance(data, list):

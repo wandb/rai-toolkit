@@ -9,6 +9,35 @@ import pytest
 from rai_toolkit.evaluation.datasets import DatasetLoader
 
 
+@pytest.mark.parametrize(
+    "content, line, column",
+    [
+        ('[\n  {"prompt": "private-dataset-content"}\n  {"prompt": "second"}\n]', 3, 3),
+        ('{"data": [\n  {"prompt": "private-dataset-content"},\n  ]}', 3, 3),
+        ("", 1, 1),
+        ('[\n  {"prompt": "private-dataset-content"}', 2, 40),
+    ],
+    ids=["array-missing-comma", "wrapper-trailing-comma", "empty", "truncated"],
+)
+def test_json_syntax_errors_report_source_location(tmp_path, content, line, column):
+    path = tmp_path / "rows.json"
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError) as exc_info:
+        DatasetLoader.from_file(path)
+
+    message = str(exc_info.value)
+    assert str(path) in message
+    assert f"line {line}" in message
+    assert f"column {column}" in message
+    assert "private-dataset-content" not in message
+    assert "row " not in message
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, json.JSONDecodeError)
+    assert (cause.lineno, cause.colno) == (line, column)
+    assert cause.msg in message
+
+
 @pytest.mark.parametrize("wrapped", [False, True], ids=["array", "data-wrapper"])
 @pytest.mark.parametrize("valid_rows", [0, 1], ids=["first-row", "after-valid-row"])
 @pytest.mark.parametrize("bad_row", [42, 1.5, "private-dataset-content", True, [], None])
