@@ -8,7 +8,7 @@ SPDX-PackageName: rai-toolkit
 
 Thank you to everyone contributing code, tests, documentation, bug reports, and
 review to rai-toolkit. The table below credits merged contributions verified
-against `main` through October 29, 2026. It is alphabetical by GitHub handle
+against `main` through November 4, 2026. It is alphabetical by GitHub handle
 and is not a ranking or a complete record of non-code contributions.
 
 Karan Nisar ([@knisar](https://github.com/knisar)) created and maintains the
@@ -20,9 +20,11 @@ toolkit. Community contributions include:
 | [@abhnvgrg](https://github.com/abhnvgrg) | Model adapter contract documentation and conformance suite, and rejection of non-finite normalized scores ([#61](https://github.com/wandb/rai-toolkit/pull/61), [#68](https://github.com/wandb/rai-toolkit/pull/68)) |
 | [@adity982](https://github.com/adity982) | Groundedness scorer with verified evidence and deterministic tool-call accuracy scoring ([#13](https://github.com/wandb/rai-toolkit/pull/13), [#72](https://github.com/wandb/rai-toolkit/pull/72)) |
 | [@alanveloper-epam](https://github.com/alanveloper-epam) | Clear source and record diagnostics for surplus CSV fields, with regression tests ([#122](https://github.com/wandb/rai-toolkit/pull/122)) |
+| [@AP24110011695](https://github.com/AP24110011695) | Clear CLI errors for invalid model references while preserving factory and constructor failures, with regression tests ([#130](https://github.com/wandb/rai-toolkit/pull/130)) |
 | [@arian-bozorgzad](https://github.com/arian-bozorgzad) | Source locations in JSONL dataset errors ([#87](https://github.com/wandb/rai-toolkit/pull/87)) |
 | [@bercedev](https://github.com/bercedev) | Clear CLI errors for unknown dataset names, preserving suggestions and loader failures ([#119](https://github.com/wandb/rai-toolkit/pull/119)) |
 | [@Charansripadi](https://github.com/Charansripadi) | Deterministic task-completion scorer ([#113](https://github.com/wandb/rai-toolkit/pull/113)) |
+| [@dannyward630](https://github.com/dannyward630) | Platform-independent CSV fixtures verifying exact LF and CRLF preservation in multiline fields ([#128](https://github.com/wandb/rai-toolkit/pull/128)) |
 | [@denis-samatov](https://github.com/denis-samatov) | HR industry preset ([#24](https://github.com/wandb/rai-toolkit/pull/24)) |
 | [@ducanhnguyen223](https://github.com/ducanhnguyen223) | Repaired enterprise policy-pack example, documentation and offline regression tests ([#117](https://github.com/wandb/rai-toolkit/pull/117)) |
 | [@dvd233](https://github.com/dvd233) | Explicit adapter call-time options ([#65](https://github.com/wandb/rai-toolkit/pull/65)) |
