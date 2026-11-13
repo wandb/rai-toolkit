@@ -73,6 +73,40 @@ def test_unsupported_format_is_unassessed(expected_format: str) -> None:
     assert expected_format in result.explanation
 
 
+@pytest.mark.parametrize(
+    "output",
+    ['"answer"', '["answer"]', '[{"answer": 42}]', "[]", "42", "4.2", "true", "false", "null"],
+)
+def test_required_keys_reject_non_object_json(output: str) -> None:
+    """Key requirements only make sense on objects, so any other valid JSON
+    top-level type is a measured failure, not a pass or a TypeError."""
+    result = OutputFormatScorer(required_keys=["answer"]).score(output)
+
+    assert result.score == 0.5
+    assert not result.passed
+    assert result.assessed
+    assert result.details["missing_keys"] == ["answer"]
+    assert "object" in result.explanation.lower()
+
+
+def test_required_keys_still_fail_on_nested_only_keys() -> None:
+    result = OutputFormatScorer(required_keys=["answer"]).score('{"outer": {"answer": 42}}')
+
+    assert result.score == 0.5
+    assert not result.passed
+    assert result.assessed
+    assert result.details["missing_keys"] == ["answer"]
+
+
+def test_no_required_keys_still_accepts_any_valid_json_type() -> None:
+    for output in ['"answer"', "[1, 2]", "42", "4.2", "true", "false", "null"]:
+        result = OutputFormatScorer().score(output)
+
+        assert result.score == 1.0, output
+        assert result.passed, output
+        assert result.assessed, output
+
+
 def test_unsupported_format_never_claims_a_pass() -> None:
     scorer = OutputFormatScorer(expected_format="JSON")
 

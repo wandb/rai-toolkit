@@ -309,6 +309,8 @@ class OutputFormatScorer(BaseScorer):
     """Validates structured output format (MIT-7.1).
 
     Checks if model output is valid JSON, XML, or matches a custom pattern.
+    With ``required_keys``, valid JSON must also be a top-level object
+    containing those keys.
     """
 
     name = "OutputFormatScorer"
@@ -358,6 +360,18 @@ class OutputFormatScorer(BaseScorer):
     def _check_json(self, output: str) -> ScorerResult:
         try:
             parsed = json.loads(output)
+            if self.required_keys and not isinstance(parsed, dict):
+                missing_keys = list(self.required_keys)
+                return ScorerResult(
+                    score=0.5,
+                    passed=False,
+                    category=self.category,
+                    explanation=(
+                        "Valid JSON but a top-level object is required for key checks: "
+                        f"missing required keys: {missing_keys}"
+                    ),
+                    details={"missing_keys": missing_keys},
+                )
             missing_keys = [
                 k for k in self.required_keys
                 if k not in parsed
