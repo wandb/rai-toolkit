@@ -164,6 +164,11 @@ def _cmd_assess(args: argparse.Namespace) -> int:
 
     if args.dataset:
         datasets = args.dataset
+        for slug in datasets:
+            unknown = _unknown_dataset_error(slug)
+            if unknown is not None:
+                print(f"error: {unknown}", file=sys.stderr)
+                return 2
     else:
         try:
             datasets = _default_datasets_for(

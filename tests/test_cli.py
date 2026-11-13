@@ -199,3 +199,57 @@ def test_model_implementation_errors_propagate(tmp_path, monkeypatch, kind: str,
 
     with pytest.raises(exc, match="model implementation failure"):
         main(["assess", model_ref, "--demo-datasets"])
+
+
+def _write_offline_model(tmp_path, monkeypatch, module_name: str) -> str:
+    (tmp_path / f"{module_name}.py").write_text(
+        "from rai_toolkit.models.callable import CallableModel\n"
+        "\n"
+        "\n"
+        "async def _respond(text, **kwargs):\n"
+        "    return 'I cannot help with that.'\n"
+        "\n"
+        "\n"
+        "def build():\n"
+        "    return CallableModel(_respond, name='offline-probe')\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    return f"{module_name}:build"
+
+
+@pytest.mark.parametrize("datasets", [["bbqq"], ["mit-risk-smoke", "bbqq"]])
+def test_unknown_assess_dataset_is_an_input_error(
+    datasets: list[str], tmp_path, monkeypatch, capsys
+) -> None:
+    import rai_toolkit.assessment as assessment
+
+    def assessor_must_not_start(*args, **kwargs):
+        raise AssertionError("the assessment started for an unknown dataset")
+
+    monkeypatch.setattr(assessment, "Assessor", assessor_must_not_start)
+    model_ref = _write_offline_model(tmp_path, monkeypatch, "_rai_probe_unknown_dataset_model")
+    argv = ["assess", model_ref]
+    for slug in datasets:
+        argv += ["--dataset", slug]
+
+    exit_code = main(argv)
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "error: Example dataset 'bbqq' not registered." in captured.err
+    assert "Did you mean: bbq?" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_assess_loader_key_error_for_a_registered_dataset_propagates(tmp_path, monkeypatch) -> None:
+    from rai_toolkit.examples import ExampleRegistry
+
+    def broken_load(slug: str, limit: int | None = None) -> list[dict]:
+        raise KeyError("question")
+
+    monkeypatch.setattr(ExampleRegistry, "load", staticmethod(broken_load))
+    model_ref = _write_offline_model(tmp_path, monkeypatch, "_rai_probe_registered_dataset_model")
+
+    with pytest.raises(KeyError, match="question"):
+        main(["assess", model_ref, "--dataset", "mit-risk-smoke", "--no-redteam"])
