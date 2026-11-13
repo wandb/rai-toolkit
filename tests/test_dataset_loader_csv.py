@@ -108,3 +108,10 @@ def test_csv_empty_and_header_only_files_return_empty_list(tmp_path, content):
     path.write_text(content, encoding="utf-8")
 
     assert DatasetLoader.from_file(path) == []
+
+
+def test_csv_utf8_bom_does_not_break_header_normalization(tmp_path):
+    path = tmp_path / "rows.csv"
+    path.write_bytes("\ufeffquestion,answer\nWhat is 1+1?,2\n".encode())
+
+    assert DatasetLoader.from_file(path) == [{"input": "What is 1+1?", "expected": "2"}]
