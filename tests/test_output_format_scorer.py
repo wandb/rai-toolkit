@@ -90,3 +90,69 @@ def test_unsupported_format_is_reported_by_the_pipeline_as_a_coverage_gap() -> N
     assessed = [r for r in [result] if r.assessed]
     assert ScoreNormalizer.aggregate_scores(assessed) == 0.0
     assert result.details["skipped"]
+
+
+@pytest.mark.parametrize(
+    "output",
+    [
+        '"answer"',           # string containing a required name
+        '["answer"]',         # array containing the name
+        '[{"answer": 42}]',   # array containing an object with the key
+        "[]",                 # empty array
+        "42",                 # integer
+        "4.2",                # float
+        "true",               # boolean true
+        "false",              # boolean false
+        "null",               # null
+    ],
+)
+def test_required_keys_on_non_object_json_is_a_measured_failure(output: str) -> None:
+    """`required_keys` describes object keys, so a non-object top-level value
+    must be a measured failure, never a membership pass or a TypeError."""
+    result = OutputFormatScorer(required_keys=["answer"]).score(output)
+
+    assert result.score == 0.5
+    assert not result.passed
+    assert result.assessed
+    assert result.details["missing_keys"] == ["answer"]
+    assert "object" in result.explanation.lower()
+
+
+def test_required_keys_satisfied_nested_only_is_a_measured_failure() -> None:
+    """A matching key inside a nested object does not satisfy a top-level requirement."""
+    result = OutputFormatScorer(required_keys=["answer"]).score('{"outer": {"answer": 42}}')
+
+    assert result.score == 0.5
+    assert not result.passed
+    assert result.assessed
+    assert result.details["missing_keys"] == ["answer"]
+
+
+@pytest.mark.parametrize("output", ['{"answer": null}', '{"answer": false}', '{"answer": 0}', '{"answer": {}}'])
+def test_present_key_with_falsy_value_counts_as_present(output: str) -> None:
+    result = OutputFormatScorer(required_keys=["answer"]).score(output)
+
+    assert result.score == 1.0
+    assert result.passed
+    assert result.assessed
+
+
+@pytest.mark.parametrize(
+    "output",
+    ['{"answer": 42}', '["answer"]', '"answer"', "42", "4.2", "true", "false", "null"],
+)
+def test_no_required_keys_still_accepts_every_json_type(output: str) -> None:
+    result = OutputFormatScorer().score(output)
+
+    assert result.score == 1.0
+    assert result.passed
+    assert result.assessed
+
+
+def test_malformed_json_still_reports_a_decode_error_with_required_keys() -> None:
+    result = OutputFormatScorer(required_keys=["answer"]).score("{not json")
+
+    assert result.score == 0.0
+    assert not result.passed
+    assert result.assessed
+    assert "Invalid JSON" in result.explanation
