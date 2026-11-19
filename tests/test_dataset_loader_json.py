@@ -117,3 +117,10 @@ def test_json_empty_arrays_return_empty_list(tmp_path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
     assert DatasetLoader.from_file(path) == []
+
+
+def test_json_utf8_bom_is_accepted(tmp_path):
+    path = tmp_path / "rows.json"
+    path.write_bytes("\ufeff".encode() + json.dumps([{"prompt": "hi", "target": "hi"}]).encode())
+
+    assert DatasetLoader.from_file(path) == [{"input": "hi", "target": "hi"}]

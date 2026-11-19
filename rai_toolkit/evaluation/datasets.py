@@ -47,6 +47,9 @@ class DatasetLoader:
         array. Invalid dataset shapes raise ``ValueError`` with the filename;
         invalid rows also include their one-based array position, not a line number.
 
+        All formats accept a leading UTF-8 byte-order mark (BOM), which is
+        written by Excel and some Windows editors.
+
         Args:
             path: Path to CSV, JSON, or JSONL file.
 
@@ -82,7 +85,7 @@ class DatasetLoader:
     @staticmethod
     def _load_csv(path: Path) -> list[dict[str, Any]]:
         rows = []
-        with open(path, newline="", encoding="utf-8") as f:
+        with open(path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             for record_number, row in enumerate(reader, start=1):
                 if None in row:
@@ -95,7 +98,7 @@ class DatasetLoader:
 
     @staticmethod
     def _load_json(path: Path) -> list[dict[str, Any]]:
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             data = json.load(f)
         if isinstance(data, dict):
             data = data.get("data")
@@ -118,7 +121,7 @@ class DatasetLoader:
     @staticmethod
     def _load_jsonl(path: Path) -> list[dict[str, Any]]:
         rows = []
-        with open(path, encoding="utf-8") as f:
+        with open(path, encoding="utf-8-sig") as f:
             for line_number, line in enumerate(f, start=1):
                 line = line.strip()
                 if not line:
