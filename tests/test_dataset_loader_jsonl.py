@@ -67,3 +67,10 @@ def test_jsonl_empty_file_returns_empty_list(tmp_path):
     path.write_text("", encoding="utf-8")
 
     assert DatasetLoader.from_file(path) == []
+
+
+def test_jsonl_utf8_bom_is_accepted(tmp_path):
+    path = tmp_path / "rows.jsonl"
+    path.write_bytes("\ufeff".encode() + b'{"prompt": "hi", "target": "hi"}\n')
+
+    assert DatasetLoader.from_file(path) == [{"input": "hi", "target": "hi"}]

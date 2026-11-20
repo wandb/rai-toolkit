@@ -13,13 +13,22 @@ from rai_toolkit.evaluation.datasets import DatasetLoader
     "content, line, column",
     [
         ('[\n  {"prompt": "private-dataset-content"}\n  {"prompt": "second"}\n]', 3, 3),
-        ('{"data": [\n  {"prompt": "private-dataset-content"},\n  ]}', 3, 3),
+        ('{"data": [\n  {"prompt": "private-dataset-content"},\n  ]}', None, None),
         ("", 1, 1),
         ('[\n  {"prompt": "private-dataset-content"}', 2, 40),
     ],
     ids=["array-missing-comma", "wrapper-trailing-comma", "empty", "truncated"],
 )
 def test_json_syntax_errors_report_source_location(tmp_path, content, line, column):
+    # CPython versions disagree on where to point for a trailing comma.
+    if line is None:
+        with pytest.raises(json.JSONDecodeError) as parser_error:
+            json.loads(content)
+        expected = parser_error.value
+        line, column = expected.lineno, expected.colno
+    else:
+        expected = None
+
     path = tmp_path / "rows.json"
     path.write_text(content, encoding="utf-8")
 
@@ -36,6 +45,8 @@ def test_json_syntax_errors_report_source_location(tmp_path, content, line, colu
     assert isinstance(cause, json.JSONDecodeError)
     assert (cause.lineno, cause.colno) == (line, column)
     assert cause.msg in message
+    if expected is not None:
+        assert cause.msg == expected.msg
 
 
 @pytest.mark.parametrize("wrapped", [False, True], ids=["array", "data-wrapper"])
@@ -146,3 +157,10 @@ def test_json_empty_arrays_return_empty_list(tmp_path, data):
     path.write_text(json.dumps(data), encoding="utf-8")
 
     assert DatasetLoader.from_file(path) == []
+
+
+def test_json_utf8_bom_is_accepted(tmp_path):
+    path = tmp_path / "rows.json"
+    path.write_bytes("\ufeff".encode() + json.dumps([{"prompt": "hi", "target": "hi"}]).encode())
+
+    assert DatasetLoader.from_file(path) == [{"input": "hi", "target": "hi"}]
