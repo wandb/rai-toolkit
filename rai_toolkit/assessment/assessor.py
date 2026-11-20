@@ -983,6 +983,33 @@ class Assessor:
         except Exception as e:
             logger.debug("EU AI Act coverage unavailable: %s", e)
 
+        try:
+            from rai_toolkit.compliance.nyc_ll144_mapping import (
+                format_nyc_ll144_framework_label,
+            )
+
+            nyc_cov = self.engine.get_nyc_ll144_coverage(profile)
+            for req_id, cov in nyc_cov.items():
+                assessments.append(
+                    _build_assessment(
+                        framework=format_nyc_ll144_framework_label(
+                            req_id,
+                            section=cov.get("section"),
+                            title=cov.get("title"),
+                        ),
+                        coverage=cov,
+                        eval_results=eval_results,
+                        na_note=(
+                            "No scorer-measurable categories for this requirement. "
+                            "NYC LL 144 obligations (bias audits, notice, publication) "
+                            "are employer-side duties; use this row to track the MIT "
+                            "categories that support them."
+                        ),
+                    )
+                )
+        except Exception as e:
+            logger.debug("NYC LL 144 coverage unavailable: %s", e)
+
         # Framework status reflects each framework's own scorer coverage and the
         # evaluation gate. Red-team hotness and policy hotness are surfaced via
         # their own dedicated verdict gates (red-team severity gate, policy
@@ -1280,11 +1307,39 @@ def _build_assessment(
     coverage: dict[str, Any],
     eval_results: EvaluationResults,
     na_note: str,
+    statutory_gaps: list[str] | None = None,
 ) -> FrameworkAssessment:
+    """Build a per-framework assessment row, surfacing statutory gaps.
+
+    ``statutory_gaps`` defaults to ``coverage["coverage_gaps"]`` (populated
+    for NYC LL 144 rows by ``ComplianceMappingEngine.get_nyc_ll144_coverage``;
+    NIST/EU rows carry no such key and are unaffected).
+
+    Design choice (a) from maintainer review: when a NYC LL 144 row has
+    non-empty statutory gaps, each gap is appended as a
+    ``"Statutory gap — ..."`` finding and a PASS is capped at WARN, because
+    automated MIT-category coverage is not legal compliance (independent
+    audit, impact-ratio math, notice delivery, and publication remain
+    employer-side duties requiring human verification). WARN fails
+    ``FrameworkAssessment.passed`` (PASS/N/A only) by design, so the overall
+    gate cannot show an unqualified PASS while statutory duties are
+    unverified. Only NYC rows are capped; other frameworks keep their
+    coverage-derived status.
+    """
     status = _verdict(coverage, eval_results)
     findings: list[str] = []
     if status == "N/A":
         findings.append(na_note)
+    gaps: list[str] = (
+        list(statutory_gaps)
+        if statutory_gaps is not None
+        else list(coverage.get("coverage_gaps") or [])
+    )
+    if gaps and status != "N/A":
+        for gap in gaps:
+            findings.append(f"Statutory gap — {gap} (requires human verification)")
+        if framework.startswith("NYC LL 144") and status == "PASS":
+            status = "WARN"
     total_raw = coverage.get("total_categories")
     covered_raw = coverage.get("covered_categories")
     total_count: int | None = None
@@ -1371,6 +1426,26 @@ def _redteam_severity_gate_failures(
     ]
 
 
+def _nyc_statutory_gap_note(
+    frameworks: list[FrameworkAssessment],
+) -> str | None:
+    """Return a human-attestation note when NYC rows carry statutory gaps."""
+    nyc_gap_rows = [
+        f
+        for f in frameworks
+        if f.framework.startswith("NYC LL 144")
+        and any("Statutory gap" in note for note in f.findings)
+    ]
+    if not nyc_gap_rows:
+        return None
+    return (
+        "NYC LL 144 statutory gaps require human attestation: automated "
+        "MIT-category coverage does not establish legal compliance "
+        "(independent audit, impact-ratio calculations, notice delivery, "
+        "and publication remain employer-side duties)."
+    )
+
+
 def _redteam_error_budget_failures(
     report: RedTeamReport | None, max_error_rate: float
 ) -> list[AttackResult]:
@@ -1446,6 +1521,9 @@ def _verdict_rationale(
             lines.append(coverage_gap)
         if policy_note:
             lines.append(policy_note)
+        nyc_note = _nyc_statutory_gap_note(frameworks)
+        if nyc_note:
+            lines.append(nyc_note)
         return lines
 
     lines: list[str] = []
@@ -1525,6 +1603,10 @@ def _verdict_rationale(
 
     if coverage_gap:
         lines.append(coverage_gap)
+
+    nyc_note = _nyc_statutory_gap_note(frameworks)
+    if nyc_note:
+        lines.append(nyc_note)
 
     policy_note = _policy_assessment_rationale(
         eval_results, violations, policies_configured=policies_configured

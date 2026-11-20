@@ -17,6 +17,7 @@ class Framework(Enum):
     MIT_AI_RISK = "mit_ai_risk_repository"
     NIST_AI_RMF = "nist_ai_rmf"
     EU_AI_ACT = "eu_ai_act"
+    NYC_LL_144 = "nyc_local_law_144"
 
 
 class RiskSeverity(Enum):
