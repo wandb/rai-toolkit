@@ -8,7 +8,7 @@ SPDX-PackageName: rai-toolkit
 
 Thank you to everyone contributing code, tests, documentation, bug reports, and
 review to rai-toolkit. The table below credits merged contributions verified
-against `main` through November 19, 2026. It is alphabetical by GitHub handle
+against `main` through November 21, 2026. It is alphabetical by GitHub handle
 and is not a ranking or a complete record of non-code contributions.
 
 Karan Nisar ([@knisar](https://github.com/knisar)) created and maintains the
@@ -33,6 +33,7 @@ toolkit. Community contributions include:
 | [@EffNine](https://github.com/EffNine) | Configured scorer names in Weave ([#33](https://github.com/wandb/rai-toolkit/pull/33)) |
 | [@GBX-Max1220](https://github.com/GBX-Max1220) | Structured data boundaries in LLM judge prompts ([#114](https://github.com/wandb/rai-toolkit/pull/114)) |
 | [@HarshRajSinghania](https://github.com/HarshRajSinghania) | Runnable offline tool-call accuracy tutorial ([#104](https://github.com/wandb/rai-toolkit/pull/104)) |
+| [@imshah-id](https://github.com/imshah-id) | Source paths and physical line/column diagnostics for malformed JSON datasets, with parser-compatible regression tests ([#132](https://github.com/wandb/rai-toolkit/pull/132)) |
 | [@Jah-yee](https://github.com/Jah-yee) | Report coverage for unassessed results and failure counts limited to measured failures, with regression tests ([#124](https://github.com/wandb/rai-toolkit/pull/124)) |
 | [@KunyangZhang](https://github.com/KunyangZhang) | Keyword and derivative matching with false-positive controls and case-insensitive custom keywords, stable toxicity scores when unused keywords are added, and unassessed results for unsupported output formats ([#73](https://github.com/wandb/rai-toolkit/pull/73), [#74](https://github.com/wandb/rai-toolkit/pull/74), [#90](https://github.com/wandb/rai-toolkit/pull/90), [#123](https://github.com/wandb/rai-toolkit/pull/123)) |
 | [@lidongze1002](https://github.com/lidongze1002) | UTF-8 byte-order mark support for CSV, JSON, and JSONL datasets, with regression tests ([#141](https://github.com/wandb/rai-toolkit/pull/141)) |
