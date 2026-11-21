@@ -21,12 +21,14 @@ not claim that serialization prevents every model-level prompt injection.
 from __future__ import annotations
 
 import json
+import sys
 from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
 from rai_toolkit.prompts.judge_prompts import JUDGE_PROMPTS
+from rai_toolkit.scorers import llm_judges
 from rai_toolkit.scorers.llm_judges import (
     ContentSafetyJudge,
     ContextPrecisionScorer,
@@ -44,30 +46,6 @@ from rai_toolkit.scorers.llm_judges import (
     _split_context_chunks,
     build_judge_messages,
 )
-
-# The 12 scorers named in the issue: the seven Judge classes and the five
-# specialized scorers. The two groups are disjoint -- FactualityJudge is one
-# of the seven even though it overrides score(), so it is not counted in the
-# specialized group.
-ISSUE_62_JUDGE_CLASSES = (
-    "FactualityJudge",
-    "FairnessJudge",
-    "ContentSafetyJudge",
-    "PrivacyJudge",
-    "SecurityJudge",
-    "TransparencyJudge",
-    "ExplainabilityJudge",
-)
-
-ISSUE_62_SPECIALIZED_SCORERS = (
-    "GroundednessScorer",
-    "RetrievalRelevanceScorer",
-    "ContextPrecisionScorer",
-    "ContextRecallScorer",
-    "RubricScorer",
-)
-
-ISSUE_62_SCORERS = ISSUE_62_JUDGE_CLASSES + ISSUE_62_SPECIALIZED_SCORERS
 
 # A marker that appears only inside row values, never in scorer-authored text,
 # so "this row value is absent from the system message" is checkable directly.
@@ -247,18 +225,129 @@ def _cases() -> list[tuple[str, Any, dict[str, Any], dict[str, str], str]]:
     ]
 
 
-def test_case_matrix_covers_the_twelve_scorers_named_in_the_issue() -> None:
-    # Exactly the issue's scope: seven Judge classes plus five specialized
-    # scorers, with nothing counted in both groups.
-    assert len(ISSUE_62_JUDGE_CLASSES) == 7
-    assert len(ISSUE_62_SPECIALIZED_SCORERS) == 5
-    assert len(ISSUE_62_SCORERS) == 12
-    assert len(set(ISSUE_62_SCORERS)) == 12
-    assert not set(ISSUE_62_JUDGE_CLASSES) & set(ISSUE_62_SPECIALIZED_SCORERS)
+def _builtin_judge_scorers() -> set[type]:
+    """Every built-in LLM judge shipped by the production module.
 
-    covered = [label for label, _cls, _kwargs, _fields, _kind in _cases()]
-    assert len(covered) == len(set(covered)) == 12
-    assert set(covered) == set(ISSUE_62_SCORERS)
+    Discovery walks the module's own namespace, so the expected set can never
+    drift from what actually ships: a new subclass is picked up automatically,
+    while the base class, unrelated classes and re-exported aliases from other
+    modules are excluded.
+    """
+    found: set[type] = set()
+    for name, obj in vars(llm_judges).items():
+        if (
+            isinstance(obj, type)
+            and issubclass(obj, LLMJudgeScorer)
+            and obj is not LLMJudgeScorer
+            and obj.__module__ == llm_judges.__name__
+        ):
+            found.add(obj)
+    return found
+
+
+def _case_scorer_classes() -> list[type]:
+    """Scorer classes referenced by the case matrix, in case order."""
+    return [cls for _label, cls, _kwargs, _fields, _kind in _cases()]
+
+
+def _coverage_violations() -> list[str]:
+    """Human-readable coverage problems, or an empty list.
+
+    The expected set comes from production classes, never from a handwritten
+    manifest: adding a properly covered judge must not require editing a
+    second list, and omitting one must fail loudly instead of silently
+    shrinking the boundary-test matrix.
+    """
+    shipped = _builtin_judge_scorers()
+    cases = _cases()
+    cased_classes = _case_scorer_classes()
+    labels = [label for label, _cls, _kwargs, _fields, _kind in cases]
+
+    problems: list[str] = []
+
+    missing = sorted(cls.__name__ for cls in shipped - set(cased_classes))
+    if missing:
+        problems.append(f"built-in judges without a case: {', '.join(missing)}")
+
+    outside = [
+        (label, cls.__name__)
+        for label, cls, _kwargs, _fields, _kind in cases
+        if cls not in shipped
+    ]
+    if outside:
+        problems.append(
+            "case matrix refers to classes outside the built-in set: "
+            + ", ".join(f"{cls_name} (label {label})" for label, cls_name in outside)
+        )
+
+    duplicate_classes = sorted(
+        {cls.__name__ for cls in cased_classes if cased_classes.count(cls) > 1}
+    )
+    if duplicate_classes:
+        problems.append(
+            f"duplicate scorer classes in the case matrix: {', '.join(duplicate_classes)}"
+        )
+
+    duplicate_labels = sorted({label for label in labels if labels.count(label) > 1})
+    if duplicate_labels:
+        problems.append(
+            f"duplicate labels in the case matrix: {', '.join(duplicate_labels)}"
+        )
+
+    return problems
+
+
+def test_case_matrix_covers_every_shipped_judge_scorer() -> None:
+    # The parametrized boundary tests below only run for cases in _cases(),
+    # so the matrix must equal the shipped set exactly: no judge silently
+    # uncovered, no stale case pointing at a class that no longer ships.
+    problems = _coverage_violations()
+    assert not problems, "; ".join(problems)
+
+
+def test_synthetic_judge_without_a_case_fails_the_coverage_guard(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A new built-in judge added to the production module, with __module__
+    # set accordingly but no case in the matrix, must fail naming that judge.
+    class SyntheticJudge(LLMJudgeScorer):
+        __module__ = llm_judges.__name__
+
+    monkeypatch.setattr(llm_judges, "SyntheticJudge", SyntheticJudge, raising=False)
+    problems = _coverage_violations()
+    assert any("SyntheticJudge" in problem for problem in problems)
+
+
+def test_removing_a_case_names_the_uncovered_class(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = _cases()
+    reduced = [case for case in cases if case[0] != "FairnessJudge"]
+    monkeypatch.setattr(sys.modules[__name__], "_cases", lambda: reduced)
+    problems = _coverage_violations()
+    assert any("FairnessJudge" in problem for problem in problems)
+
+
+def test_duplicate_case_classes_and_labels_fail_clearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = _cases()
+    monkeypatch.setattr(sys.modules[__name__], "_cases", lambda: cases + [cases[0]])
+    problems = _coverage_violations()
+    assert any("duplicate" in problem for problem in problems)
+
+
+def test_a_stale_case_outside_the_shipped_set_fails_clearly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cases = _cases()
+    stale = cases + [("FakeJudge", LLMJudgeScorer, {}, {}, "plain")]
+    monkeypatch.setattr(sys.modules[__name__], "_cases", lambda: stale)
+    problems = _coverage_violations()
+    assert any(
+        "outside the built-in set" in problem and "LLMJudgeScorer" in problem
+        for problem in problems
+    )
 
 
 def test_no_interpolating_prompt_helper_is_left_on_the_base_class() -> None:
@@ -611,7 +700,9 @@ def test_a_scorer_without_instructions_fails_closed(monkeypatch) -> None:
     called.assert_not_called()
 
 
-@pytest.mark.parametrize("label", ISSUE_62_SCORERS)
+@pytest.mark.parametrize(
+    "label", [label for label, _cls, _kwargs, _fields, _kind in _cases()]
+)
 def test_every_shipped_judge_defines_both_prompt_sections(label: str) -> None:
     prompts = JUDGE_PROMPTS[label]
     assert prompts["system"].strip()
