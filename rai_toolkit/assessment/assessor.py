@@ -1658,18 +1658,23 @@ def _coverage_gap_rationale(eval_results: EvaluationResults) -> str | None:
     if not breakdown:
         return None
 
-    # Collapse multiple reasons-per-scorer into a single rationale token.
-    by_scorer: dict[str, dict[str, Any]] = {}
+    # One rationale token per scorer. A scorer with several reasons lists each
+    # reason with its own count, so no run is reported under another reason.
+    by_scorer: dict[str, dict[str, int]] = {}
     for entry in breakdown:
-        scorer = entry["scorer"]
-        row = by_scorer.setdefault(scorer, {"count": 0, "reason": entry["reason"]})
-        row["count"] += entry["count"]
+        reasons = by_scorer.setdefault(entry["scorer"], {})
+        reasons[entry["reason"]] = entry["count"]
 
-    parts = [
-        f"{name} ×{data['count']} ({data['reason']})"
-        for name, data in sorted(by_scorer.items(), key=lambda kv: -kv[1]["count"])
-    ]
-    total = sum(d["count"] for d in by_scorer.values())
+    parts = []
+    for name, reasons in sorted(
+        by_scorer.items(), key=lambda kv: -sum(kv[1].values())
+    ):
+        if len(reasons) == 1:
+            detail = next(iter(reasons))
+        else:
+            detail = ", ".join(f"{reason} ×{count}" for reason, count in reasons.items())
+        parts.append(f"{name} ×{sum(reasons.values())} ({detail})")
+    total = sum(sum(reasons.values()) for reasons in by_scorer.values())
     return (
         f"Coverage gap: {total} scorer run(s) produced no signal and were excluded "
         f"from the gate: {'; '.join(parts)}. Un-assessed runs do not pass or fail; "
@@ -1687,6 +1692,10 @@ def _classify_unassessed_reason(sr: ScorerResult) -> str:
         return "behavioral/refusal row"
     if "skipped" in details and details["skipped"] == "empty_context":
         return "no grounding context"
+    # The model returned no response for this row, so no scorer ran. That is
+    # a failed prediction, not a scorer or dataset gap, and gets its own label.
+    if "skipped" in details and details["skipped"] == "model_prediction_error":
+        return "model prediction error"
     # A non-finite judge score is a scorer/judge integration problem, not a
     # dataset gap: the reply parsed but carried NaN or an infinity where a
     # 0-3 grade belongs, so it is binned with the parser failures.

@@ -49,7 +49,8 @@ pipeline retains the dataset row and its diagnostic `model_output`, but does not
 invoke any requested scorer. Each scorer receives an unassessed placeholder with
 `details["skipped"] = "model_prediction_error"` and its `scorer_name`. Error text is
 not a model response to measure; a successful response beginning with `[ERROR:`
-is still scored normally.
+is still scored normally. Assessment reports list these gaps under the reason
+`model prediction error`, counted separately from a scorer's other reasons.
 
 Summary score and pass-rate metrics continue to use only assessed results. A run
 with partial prediction coverage can therefore pass on its assessed subset;
