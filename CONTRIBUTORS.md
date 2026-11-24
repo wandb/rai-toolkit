@@ -8,7 +8,7 @@ SPDX-PackageName: rai-toolkit
 
 Thank you to everyone contributing code, tests, documentation, bug reports, and
 review to rai-toolkit. The table below credits merged contributions verified
-against `main` through November 4, 2026. It is alphabetical by GitHub handle
+against `main` through November 21, 2026. It is alphabetical by GitHub handle
 and is not a ranking or a complete record of non-code contributions.
 
 Karan Nisar ([@knisar](https://github.com/knisar)) created and maintains the
@@ -23,16 +23,20 @@ toolkit. Community contributions include:
 | [@AP24110011695](https://github.com/AP24110011695) | Clear CLI errors for invalid model references while preserving factory and constructor failures, with regression tests ([#130](https://github.com/wandb/rai-toolkit/pull/130)) |
 | [@arian-bozorgzad](https://github.com/arian-bozorgzad) | Source locations in JSONL dataset errors ([#87](https://github.com/wandb/rai-toolkit/pull/87)) |
 | [@bercedev](https://github.com/bercedev) | Clear CLI errors for unknown dataset names, preserving suggestions and loader failures ([#119](https://github.com/wandb/rai-toolkit/pull/119)) |
+| [@bfs2021](https://github.com/bfs2021) | Required-key validation limited to top-level JSON objects, with regression tests ([#136](https://github.com/wandb/rai-toolkit/pull/136)) |
 | [@Charansripadi](https://github.com/Charansripadi) | Deterministic task-completion scorer ([#113](https://github.com/wandb/rai-toolkit/pull/113)) |
 | [@dannyward630](https://github.com/dannyward630) | Platform-independent CSV fixtures verifying exact LF and CRLF preservation in multiline fields ([#128](https://github.com/wandb/rai-toolkit/pull/128)) |
 | [@denis-samatov](https://github.com/denis-samatov) | HR industry preset ([#24](https://github.com/wandb/rai-toolkit/pull/24)) |
+| [@dilipna](https://github.com/dilipna) | Clear assessment CLI errors for unknown dataset names while preserving registered-loader failures, with regression tests ([#139](https://github.com/wandb/rai-toolkit/pull/139)) |
 | [@ducanhnguyen223](https://github.com/ducanhnguyen223) | Repaired enterprise policy-pack example, documentation and offline regression tests ([#117](https://github.com/wandb/rai-toolkit/pull/117)) |
 | [@dvd233](https://github.com/dvd233) | Explicit adapter call-time options ([#65](https://github.com/wandb/rai-toolkit/pull/65)) |
 | [@EffNine](https://github.com/EffNine) | Configured scorer names in Weave ([#33](https://github.com/wandb/rai-toolkit/pull/33)) |
 | [@GBX-Max1220](https://github.com/GBX-Max1220) | Structured data boundaries in LLM judge prompts ([#114](https://github.com/wandb/rai-toolkit/pull/114)) |
 | [@HarshRajSinghania](https://github.com/HarshRajSinghania) | Runnable offline tool-call accuracy tutorial ([#104](https://github.com/wandb/rai-toolkit/pull/104)) |
+| [@imshah-id](https://github.com/imshah-id) | Source paths and physical line/column diagnostics for malformed JSON datasets, with parser-compatible regression tests ([#132](https://github.com/wandb/rai-toolkit/pull/132)) |
 | [@Jah-yee](https://github.com/Jah-yee) | Report coverage for unassessed results and failure counts limited to measured failures, with regression tests ([#124](https://github.com/wandb/rai-toolkit/pull/124)) |
 | [@KunyangZhang](https://github.com/KunyangZhang) | Keyword and derivative matching with false-positive controls and case-insensitive custom keywords, stable toxicity scores when unused keywords are added, and unassessed results for unsupported output formats ([#73](https://github.com/wandb/rai-toolkit/pull/73), [#74](https://github.com/wandb/rai-toolkit/pull/74), [#90](https://github.com/wandb/rai-toolkit/pull/90), [#123](https://github.com/wandb/rai-toolkit/pull/123)) |
+| [@lidongze1002](https://github.com/lidongze1002) | UTF-8 byte-order mark support for CSV, JSON, and JSONL datasets, with regression tests ([#141](https://github.com/wandb/rai-toolkit/pull/141)) |
 | [@M4h1m4](https://github.com/M4h1m4) | Vendor-neutral `CallableModel` adapter ([#64](https://github.com/wandb/rai-toolkit/pull/64)) |
 | [@nightcityblade](https://github.com/nightcityblade) | Normalized groundedness evidence matching ([#18](https://github.com/wandb/rai-toolkit/pull/18)) |
 | [@NourMoftah](https://github.com/NourMoftah) | CLI version reporting and policy-lint failure when no YAML files are checked ([#83](https://github.com/wandb/rai-toolkit/pull/83), [#84](https://github.com/wandb/rai-toolkit/pull/84)) |
