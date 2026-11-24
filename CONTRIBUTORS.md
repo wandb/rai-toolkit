@@ -8,7 +8,7 @@ SPDX-PackageName: rai-toolkit
 
 Thank you to everyone contributing code, tests, documentation, bug reports, and
 review to rai-toolkit. The table below credits merged contributions verified
-against `main` through November 21, 2026. It is alphabetical by GitHub handle
+against `main` through November 23, 2026. It is alphabetical by GitHub handle
 and is not a ranking or a complete record of non-code contributions.
 
 Karan Nisar ([@knisar](https://github.com/knisar)) created and maintains the
@@ -49,7 +49,7 @@ toolkit. Community contributions include:
 | [@TheJhyeFactor](https://github.com/TheJhyeFactor) | OpenAI-compatible adapter tests ([#48](https://github.com/wandb/rai-toolkit/pull/48)) |
 | [@TrueFurina](https://github.com/TrueFurina) | Four red-team attack templates ([#11](https://github.com/wandb/rai-toolkit/pull/11)) |
 | [@YaoSong808](https://github.com/YaoSong808) | Tool-output injection and unsafe tool-chain attack templates, with clause-local refusal detection and multiline regression tests ([#20](https://github.com/wandb/rai-toolkit/pull/20)) |
-| [@YusefSyed](https://github.com/YusefSyed) | Judge categories, additional Weave scorers, async and unassessed composite results, preset policy isolation, and unassessed handling of prediction errors ([#30](https://github.com/wandb/rai-toolkit/pull/30), [#31](https://github.com/wandb/rai-toolkit/pull/31), [#51](https://github.com/wandb/rai-toolkit/pull/51), [#52](https://github.com/wandb/rai-toolkit/pull/52), [#106](https://github.com/wandb/rai-toolkit/pull/106)) |
+| [@YusefSyed](https://github.com/YusefSyed) | Judge categories, additional Weave scorers, async and unassessed composite results, preset policy isolation, unassessed handling of prediction errors, and explicit prediction-error labels with per-reason coverage counts ([#30](https://github.com/wandb/rai-toolkit/pull/30), [#31](https://github.com/wandb/rai-toolkit/pull/31), [#51](https://github.com/wandb/rai-toolkit/pull/51), [#52](https://github.com/wandb/rai-toolkit/pull/52), [#106](https://github.com/wandb/rai-toolkit/pull/106), [#134](https://github.com/wandb/rai-toolkit/pull/134)) |
 | [@Zeming-Yuan](https://github.com/Zeming-Yuan) | Retrieval relevance, context precision, and context recall scorers ([#37](https://github.com/wandb/rai-toolkit/pull/37), [#58](https://github.com/wandb/rai-toolkit/pull/58)) |
 
 For later changes and the underlying commit record, see the
