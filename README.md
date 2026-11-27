@@ -181,6 +181,10 @@ report = await AttackRunner(my_model).run_all()
 print(report.format_summary())
 ```
 
+The rule that decides whether a response is a success or a resistance, including
+how refusals are attributed locally, is documented in
+[docs/redteam_matching.md](docs/redteam_matching.md).
+
 Success and resistance rates use only attacks that produced an assessable
 outcome. Check `total_assessed`, `total_errors`, and `error_rate` when
 processing reports. Execution failures and indeterminate results from optional
